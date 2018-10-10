@@ -271,7 +271,7 @@ static void drm_update_vblank_count(struct drm_device *dev, unsigned int pipe,
 	store_vblank(dev, pipe, diff, t_vblank, cur_vblank);
 }
 
-static u32 drm_vblank_count(struct drm_device *dev, unsigned int pipe)
+static u64 drm_vblank_count(struct drm_device *dev, unsigned int pipe)
 {
 	struct drm_vblank_crtc *vblank = &dev->vblank[pipe];
 
@@ -292,11 +292,11 @@ static u32 drm_vblank_count(struct drm_device *dev, unsigned int pipe)
  * This is mostly useful for hardware that can obtain the scanout position, but
  * doesn't have a hardware frame counter.
  */
-u32 drm_crtc_accurate_vblank_count(struct drm_crtc *crtc)
+u64 drm_crtc_accurate_vblank_count(struct drm_crtc *crtc)
 {
 	struct drm_device *dev = crtc->dev;
 	unsigned int pipe = drm_crtc_index(crtc);
-	u32 vblank;
+	u64 vblank;
 	unsigned long flags;
 
 	WARN_ONCE(drm_debug & DRM_UT_VBL && !dev->driver->get_vblank_timestamp,
@@ -663,14 +663,16 @@ bool drm_calc_vbltimestamp_from_scanoutpos(struct drm_device *dev,
 	delta_ns = div_s64(1000000LL * (vpos * mode->crtc_htotal + hpos),
 			   mode->crtc_clock);
 
-	/* save this only for debugging purposes */
-	ts_etime = ktime_to_timespec64(etime);
-	ts_vblank_time = ktime_to_timespec64(*vblank_time);
 	/* Subtract time delta from raw timestamp to get final
 	 * vblank_time timestamp for end of vblank.
 	 */
-	etime = ktime_sub_ns(etime, delta_ns);
-	*vblank_time = etime;
+	*vblank_time = ktime_sub_ns(etime, delta_ns);
+
+	if ((drm_debug & DRM_UT_VBL) == 0)
+		return true;
+
+	ts_etime = ktime_to_timespec64(etime);
+	ts_vblank_time = ktime_to_timespec64(*vblank_time);
 
 	DRM_DEBUG_VBL("crtc %u : v p(%d,%d)@ %lld.%06ld -> %lld.%06ld [e %d us, %d rep]\n",
 		      pipe, hpos, vpos,
@@ -1053,7 +1055,7 @@ void drm_wait_one_vblank(struct drm_device *dev, unsigned int pipe)
 {
 	struct drm_vblank_crtc *vblank = &dev->vblank[pipe];
 	int ret;
-	u32 last;
+	u64 last;
 
 	if (WARN_ON(pipe >= dev->num_crtcs))
 		return;

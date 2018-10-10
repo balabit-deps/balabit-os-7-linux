@@ -26,6 +26,13 @@ static bool group1_trap;
 static bool common_trap;
 static bool gicv4_enable;
 
+void vgic_v3_set_npie(struct kvm_vcpu *vcpu)
+{
+	struct vgic_v3_cpu_if *cpuif = &vcpu->arch.vgic_cpu.vgic_v3;
+
+	cpuif->vgic_hcr |= ICH_HCR_NPIE;
+}
+
 void vgic_v3_set_underflow(struct kvm_vcpu *vcpu)
 {
 	struct vgic_v3_cpu_if *cpuif = &vcpu->arch.vgic_cpu.vgic_v3;
@@ -47,7 +54,7 @@ void vgic_v3_fold_lr_state(struct kvm_vcpu *vcpu)
 	int lr;
 	unsigned long flags;
 
-	cpuif->vgic_hcr &= ~ICH_HCR_UIE;
+	cpuif->vgic_hcr &= ~(ICH_HCR_UIE | ICH_HCR_NPIE);
 
 	for (lr = 0; lr < vgic_cpu->used_lrs; lr++) {
 		u64 val = cpuif->vgic_lr[lr];
@@ -293,7 +300,7 @@ retry:
 	bit_nr = irq->intid % BITS_PER_BYTE;
 	ptr = pendbase + byte_offset;
 
-	ret = kvm_read_guest(kvm, ptr, &val, 1);
+	ret = kvm_read_guest_lock(kvm, ptr, &val, 1);
 	if (ret)
 		return ret;
 
@@ -346,7 +353,7 @@ int vgic_v3_save_pending_tables(struct kvm *kvm)
 		ptr = pendbase + byte_offset;
 
 		if (byte_offset != last_byte_offset) {
-			ret = kvm_read_guest(kvm, ptr, &val, 1);
+			ret = kvm_read_guest_lock(kvm, ptr, &val, 1);
 			if (ret)
 				return ret;
 			last_byte_offset = byte_offset;

@@ -33,6 +33,7 @@
 
 #include <linux/mm.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/sched.h>
@@ -1603,7 +1604,7 @@ static void __init delay_with_tsc(void)
 	do {
 		rep_nop();
 		now = rdtsc();
-	} while ((now - start) < 40000000000UL / HZ &&
+	} while ((now - start) < 40000000000ULL / HZ &&
 		time_before_eq(jiffies, end));
 }
 

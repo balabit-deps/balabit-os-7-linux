@@ -258,10 +258,11 @@ struct bcache_device {
 	struct gendisk		*disk;
 
 	unsigned long		flags;
-#define BCACHE_DEV_CLOSING	0
-#define BCACHE_DEV_DETACHING	1
-#define BCACHE_DEV_UNLINK_DONE	2
-
+#define BCACHE_DEV_CLOSING		0
+#define BCACHE_DEV_DETACHING		1
+#define BCACHE_DEV_UNLINK_DONE		2
+#define BCACHE_DEV_WB_RUNNING		3
+#define BCACHE_DEV_RATE_DW_RUNNING	4
 	unsigned		nr_stripes;
 	unsigned		stripe_size;
 	atomic_t		*stripe_sectors_dirty;
@@ -907,8 +908,9 @@ void bcache_write_super(struct cache_set *);
 
 int bch_flash_dev_create(struct cache_set *c, uint64_t size);
 
-int bch_cached_dev_attach(struct cached_dev *, struct cache_set *);
+int bch_cached_dev_attach(struct cached_dev *, struct cache_set *, uint8_t *);
 void bch_cached_dev_detach(struct cached_dev *);
+void bch_cached_dev_emit_change(struct cached_dev *);
 void bch_cached_dev_run(struct cached_dev *);
 void bcache_device_stop(struct bcache_device *);
 

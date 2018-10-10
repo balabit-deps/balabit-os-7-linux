@@ -32,6 +32,7 @@
 #include <asm/accounting.h>
 #include <asm/hmi.h>
 #include <asm/cpuidle.h>
+#include <asm/atomic.h>
 
 register struct paca_struct *local_paca asm("r13");
 
@@ -48,6 +49,9 @@ extern unsigned int debug_smp_processor_id(void); /* from linux/smp.h */
 
 #define get_lppaca()	(get_paca()->lppaca_ptr)
 #define get_slb_shadow()	(get_paca()->slb_shadow_ptr)
+
+/* Maximum number of threads per core. */
+#define	MAX_SMT		8
 
 struct task_struct;
 
@@ -159,6 +163,7 @@ struct paca_struct {
 	u64 saved_r1;			/* r1 save for RTAS calls or PM */
 	u64 saved_msr;			/* MSR saved here by enter_rtas */
 	u16 trap_save;			/* Used when bad stack is encountered */
+	u8 irq_soft_mask;       /* mask for irq soft masking */
 	u8 soft_enabled;		/* irq soft-enable flag */
 	u8 irq_happened;		/* irq happened while soft-disabled */
 	u8 io_sync;			/* writel() needs spin_unlock sync */
@@ -177,6 +182,8 @@ struct paca_struct {
 	u8 thread_mask;
 	/* Mask to denote subcore sibling threads */
 	u8 subcore_sibling_mask;
+	/* Flag to request this thread not to stop */
+	atomic_t dont_stop;
 	/*
 	 * Pointer to an array which contains pointer
 	 * to the sibling threads' paca.
@@ -239,8 +246,7 @@ struct paca_struct {
 	 */
 	u64 exrfi[EX_SIZE] __aligned(0x80);
 	void *rfi_flush_fallback_area;
-	u64 l1d_flush_congruence;
-	u64 l1d_flush_sets;
+	u64 l1d_flush_size;
 #endif
 };
 

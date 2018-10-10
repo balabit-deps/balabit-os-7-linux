@@ -83,6 +83,7 @@ struct bpf_test {
 		__u32 result;
 	} test[MAX_SUBTESTS];
 	int (*fill_helper)(struct bpf_test *self);
+	int expected_errcode; /* used when FLAG_EXPECTED_FAIL is set in the aux */
 	__u8 frag_data[MAX_DATA];
 	int stack_depth; /* for eBPF only, since tests don't call verifier */
 };
@@ -2022,7 +2023,9 @@ static struct bpf_test tests[] = {
 		},
 		CLASSIC | FLAG_NO_DATA | FLAG_EXPECTED_FAIL,
 		{ },
-		{ }
+		{ },
+		.fill_helper = NULL,
+		.expected_errcode = -EINVAL,
 	},
 	{
 		"check: div_k_0",
@@ -2032,7 +2035,9 @@ static struct bpf_test tests[] = {
 		},
 		CLASSIC | FLAG_NO_DATA | FLAG_EXPECTED_FAIL,
 		{ },
-		{ }
+		{ },
+		.fill_helper = NULL,
+		.expected_errcode = -EINVAL,
 	},
 	{
 		"check: unknown insn",
@@ -2043,7 +2048,9 @@ static struct bpf_test tests[] = {
 		},
 		CLASSIC | FLAG_EXPECTED_FAIL,
 		{ },
-		{ }
+		{ },
+		.fill_helper = NULL,
+		.expected_errcode = -EINVAL,
 	},
 	{
 		"check: out of range spill/fill",
@@ -2053,7 +2060,9 @@ static struct bpf_test tests[] = {
 		},
 		CLASSIC | FLAG_NO_DATA | FLAG_EXPECTED_FAIL,
 		{ },
-		{ }
+		{ },
+		.fill_helper = NULL,
+		.expected_errcode = -EINVAL,
 	},
 	{
 		"JUMPS + HOLES",
@@ -2145,6 +2154,8 @@ static struct bpf_test tests[] = {
 		CLASSIC | FLAG_NO_DATA | FLAG_EXPECTED_FAIL,
 		{ },
 		{ },
+		.fill_helper = NULL,
+		.expected_errcode = -EINVAL,
 	},
 	{
 		"check: LDX + RET X",
@@ -2155,6 +2166,8 @@ static struct bpf_test tests[] = {
 		CLASSIC | FLAG_NO_DATA | FLAG_EXPECTED_FAIL,
 		{ },
 		{ },
+		.fill_helper = NULL,
+		.expected_errcode = -EINVAL,
 	},
 	{	/* Mainly checking JIT here. */
 		"M[]: alt STX + LDX",
@@ -2329,6 +2342,8 @@ static struct bpf_test tests[] = {
 		CLASSIC | FLAG_NO_DATA | FLAG_EXPECTED_FAIL,
 		{ },
 		{ },
+		.fill_helper = NULL,
+		.expected_errcode = -EINVAL,
 	},
 	{	/* Passes checker but fails during runtime. */
 		"LD [SKF_AD_OFF-1]",
@@ -5391,6 +5406,7 @@ static struct bpf_test tests[] = {
 		{ },
 		{ },
 		.fill_helper = bpf_fill_maxinsns4,
+		.expected_errcode = -EINVAL,
 	},
 	{	/* Mainly checking JIT here. */
 		"BPF_MAXINSNS: Very long jump",
@@ -5403,21 +5419,31 @@ static struct bpf_test tests[] = {
 	{	/* Mainly checking JIT here. */
 		"BPF_MAXINSNS: Ctx heavy transformations",
 		{ },
+#if defined(CONFIG_BPF_JIT_ALWAYS_ON) && defined(CONFIG_S390)
+		CLASSIC | FLAG_EXPECTED_FAIL,
+#else
 		CLASSIC,
+#endif
 		{ },
 		{
 			{  1, !!(SKB_VLAN_TCI & VLAN_TAG_PRESENT) },
 			{ 10, !!(SKB_VLAN_TCI & VLAN_TAG_PRESENT) }
 		},
 		.fill_helper = bpf_fill_maxinsns6,
+		.expected_errcode = -ENOTSUPP,
 	},
 	{	/* Mainly checking JIT here. */
 		"BPF_MAXINSNS: Call heavy transformations",
 		{ },
+#if defined(CONFIG_BPF_JIT_ALWAYS_ON) && defined(CONFIG_S390)
+		CLASSIC | FLAG_NO_DATA | FLAG_EXPECTED_FAIL,
+#else
 		CLASSIC | FLAG_NO_DATA,
+#endif
 		{ },
 		{ { 1, 0 }, { 10, 0 } },
 		.fill_helper = bpf_fill_maxinsns7,
+		.expected_errcode = -ENOTSUPP,
 	},
 	{	/* Mainly checking JIT here. */
 		"BPF_MAXINSNS: Jump heavy test",
@@ -5446,19 +5472,30 @@ static struct bpf_test tests[] = {
 	{
 		"BPF_MAXINSNS: Jump, gap, jump, ...",
 		{ },
+#if defined(CONFIG_BPF_JIT_ALWAYS_ON) && defined(CONFIG_X86)
+		CLASSIC | FLAG_NO_DATA | FLAG_EXPECTED_FAIL,
+#else
 		CLASSIC | FLAG_NO_DATA,
+#endif
 		{ },
 		{ { 0, 0xababcbac } },
 		.fill_helper = bpf_fill_maxinsns11,
+		.expected_errcode = -ENOTSUPP,
 	},
 	{
 		"BPF_MAXINSNS: ld_abs+get_processor_id",
 		{ },
+#if defined(CONFIG_BPF_JIT_ALWAYS_ON) && defined(CONFIG_S390)
+		CLASSIC | FLAG_EXPECTED_FAIL,
+#else
 		CLASSIC,
+#endif
 		{ },
 		{ { 1, 0xbee } },
 		.fill_helper = bpf_fill_ld_abs_get_processor_id,
+		.expected_errcode = -ENOTSUPP,
 	},
+#if !(defined(CONFIG_BPF_JIT_ALWAYS_ON) && defined(CONFIG_S390))
 	{
 		"BPF_MAXINSNS: ld_abs+vlan_push/pop",
 		{ },
@@ -5475,6 +5512,7 @@ static struct bpf_test tests[] = {
 		{ { 2, 10 } },
 		.fill_helper = bpf_fill_jump_around_ld_abs,
 	},
+#endif
 	/*
 	 * LD_IND / LD_ABS on fragmented SKBs
 	 */
@@ -6236,7 +6274,7 @@ static struct bpf_prog *generate_filter(int which, int *err)
 
 		*err = bpf_prog_create(&fp, &fprog);
 		if (tests[which].aux & FLAG_EXPECTED_FAIL) {
-			if (*err == -EINVAL) {
+			if (*err == tests[which].expected_errcode) {
 				pr_cont("PASS\n");
 				/* Verifier rejected filter as expected. */
 				*err = 0;

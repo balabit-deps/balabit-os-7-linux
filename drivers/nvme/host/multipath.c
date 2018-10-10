@@ -15,9 +15,31 @@
 #include "nvme.h"
 
 static bool multipath = true;
-module_param(multipath, bool, 0644);
+module_param(multipath, bool, 0444);
 MODULE_PARM_DESC(multipath,
 	"turn on native support for multiple controllers per subsystem");
+
+/*
+ * If multipathing is enabled we need to always use the subsystem instance
+ * number for numbering our devices to avoid conflicts between subsystems that
+ * have multiple controllers and thus use the multipath-aware subsystem node
+ * and those that have a single controller and use the controller node
+ * directly.
+ */
+void nvme_set_disk_name(char *disk_name, struct nvme_ns *ns,
+			struct nvme_ctrl *ctrl, int *flags)
+{
+	if (!multipath) {
+		sprintf(disk_name, "nvme%dn%d", ctrl->instance, ns->head->instance);
+	} else if (ns->head->disk) {
+		sprintf(disk_name, "nvme%dc%dn%d", ctrl->subsys->instance,
+				ctrl->cntlid, ns->head->instance);
+		*flags = GENHD_FL_HIDDEN;
+	} else {
+		sprintf(disk_name, "nvme%dn%d", ctrl->subsys->instance,
+				ns->head->instance);
+	}
+}
 
 void nvme_failover_req(struct request *req)
 {
@@ -245,25 +267,6 @@ void nvme_mpath_add_disk(struct nvme_ns_head *head)
 			head->disk->disk_name);
 }
 
-void nvme_mpath_add_disk_links(struct nvme_ns *ns)
-{
-	struct kobject *slave_disk_kobj, *holder_disk_kobj;
-
-	if (!ns->head->disk)
-		return;
-
-	slave_disk_kobj = &disk_to_dev(ns->disk)->kobj;
-	if (sysfs_create_link(ns->head->disk->slave_dir, slave_disk_kobj,
-			kobject_name(slave_disk_kobj)))
-		return;
-
-	holder_disk_kobj = &disk_to_dev(ns->head->disk)->kobj;
-	if (sysfs_create_link(ns->disk->part0.holder_dir, holder_disk_kobj,
-			kobject_name(holder_disk_kobj)))
-		sysfs_remove_link(ns->head->disk->slave_dir,
-			kobject_name(slave_disk_kobj));
-}
-
 void nvme_mpath_remove_disk(struct nvme_ns_head *head)
 {
 	if (!head->disk)
@@ -277,15 +280,4 @@ void nvme_mpath_remove_disk(struct nvme_ns_head *head)
 	flush_work(&head->requeue_work);
 	blk_cleanup_queue(head->disk->queue);
 	put_disk(head->disk);
-}
-
-void nvme_mpath_remove_disk_links(struct nvme_ns *ns)
-{
-	if (!ns->head->disk)
-		return;
-
-	sysfs_remove_link(ns->disk->part0.holder_dir,
-			kobject_name(&disk_to_dev(ns->head->disk)->kobj));
-	sysfs_remove_link(ns->head->disk->slave_dir,
-			kobject_name(&disk_to_dev(ns->disk)->kobj));
 }

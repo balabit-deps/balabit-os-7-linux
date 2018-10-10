@@ -660,6 +660,10 @@
 			0: default value, disable debugging
 			1: enable debugging at boot time
 
+	cpufreq_driver= [X86] Allow only the named cpu frequency scaling driver
+			to register. Example: cpufreq_driver=powernow-k8
+			Format: { none | STRING }
+
 	cpuidle.off=1	[CPU_IDLE]
 			disable the cpuidle sub-system
 
@@ -1916,9 +1920,83 @@
 			(virtualized real and unpaged mode) on capable
 			Intel chips. Default is 1 (enabled)
 
+	kvm-intel.vmentry_l1d_flush=[KVM,Intel] Mitigation for L1 Terminal Fault
+			CVE-2018-3620.
+
+			Valid arguments: never, cond, always
+
+			always: L1D cache flush on every VMENTER.
+			cond:	Flush L1D on VMENTER only when the code between
+				VMEXIT and VMENTER can leak host memory.
+			never:	Disables the mitigation
+
+			Default is cond (do L1 cache flush in specific instances)
+
 	kvm-intel.vpid=	[KVM,Intel] Disable Virtual Processor Identification
 			feature (tagged TLBs) on capable Intel chips.
 			Default is 1 (enabled)
+
+	l1tf=           [X86] Control mitigation of the L1TF vulnerability on
+			      affected CPUs
+
+			The kernel PTE inversion protection is unconditionally
+			enabled and cannot be disabled.
+
+			full
+				Provides all available mitigations for the
+				L1TF vulnerability. Disables SMT and
+				enables all mitigations in the
+				hypervisors, i.e. unconditional L1D flush.
+
+				SMT control and L1D flush control via the
+				sysfs interface is still possible after
+				boot.  Hypervisors will issue a warning
+				when the first VM is started in a
+				potentially insecure configuration,
+				i.e. SMT enabled or L1D flush disabled.
+
+			full,force
+				Same as 'full', but disables SMT and L1D
+				flush runtime control. Implies the
+				'nosmt=force' command line option.
+				(i.e. sysfs control of SMT is disabled.)
+
+			flush
+				Leaves SMT enabled and enables the default
+				hypervisor mitigation, i.e. conditional
+				L1D flush.
+
+				SMT control and L1D flush control via the
+				sysfs interface is still possible after
+				boot.  Hypervisors will issue a warning
+				when the first VM is started in a
+				potentially insecure configuration,
+				i.e. SMT enabled or L1D flush disabled.
+
+			flush,nosmt
+
+				Disables SMT and enables the default
+				hypervisor mitigation.
+
+				SMT control and L1D flush control via the
+				sysfs interface is still possible after
+				boot.  Hypervisors will issue a warning
+				when the first VM is started in a
+				potentially insecure configuration,
+				i.e. SMT enabled or L1D flush disabled.
+
+			flush,nowarn
+				Same as 'flush', but hypervisors will not
+				warn when a VM is started in a potentially
+				insecure configuration.
+
+			off
+				Disables hypervisor mitigations and doesn't
+				emit any warnings.
+
+			Default is 'flush'.
+
+			For details see: Documentation/admin-guide/l1tf.rst
 
 	l2cr=		[PPC]
 
@@ -2623,10 +2701,17 @@
 	nosmt		[KNL,S390] Disable symmetric multithreading (SMT).
 			Equivalent to smt=1.
 
+			[KNL,x86] Disable symmetric multithreading (SMT).
+			nosmt=force: Force disable SMT, cannot be undone
+				     via the sysfs control file.
+
 	nospectre_v2	[X86] Disable all mitigations for the Spectre variant 2
 			(indirect branch prediction) vulnerability. System may
 			allow data leaks with this option, which is equivalent
 			to spectre_v2=off.
+
+	nospec_store_bypass_disable
+			[HW] Disable all mitigations for the Speculative Store Bypass vulnerability
 
 	noxsave		[BUGS=X86] Disables x86 extended register state save
 			and restore using xsave. The kernel will fallback to
@@ -2741,8 +2826,6 @@
 
 	norandmaps	Don't use address space randomization.  Equivalent to
 			echo 0 > /proc/sys/kernel/randomize_va_space
-
-	noreplace-paravirt	[X86,IA-64,PV_OPS] Don't patch paravirt_ops
 
 	noreplace-smp	[X86-32,SMP] Don't replace SMP instructions
 			with UP alternatives
@@ -3682,7 +3765,8 @@
 
 	rdt=		[HW,X86,RDT]
 			Turn on/off individual RDT features. List is:
-			cmt, mbmtotal, mbmlocal, l3cat, l3cdp, l2cat, mba.
+			cmt, mbmtotal, mbmlocal, l3cat, l3cdp, l2cat, l2cdp,
+			mba.
 			E.g. to turn on cmt and turn off mba use:
 				rdt=cmt,!mba
 
@@ -3981,6 +4065,48 @@
 			Not specifying this option is equivalent to
 			spectre_v2=auto.
 
+	spec_store_bypass_disable=
+			[HW] Control Speculative Store Bypass (SSB) Disable mitigation
+			(Speculative Store Bypass vulnerability)
+
+			Certain CPUs are vulnerable to an exploit against a
+			a common industry wide performance optimization known
+			as "Speculative Store Bypass" in which recent stores
+			to the same memory location may not be observed by
+			later loads during speculative execution. The idea
+			is that such stores are unlikely and that they can
+			be detected prior to instruction retirement at the
+			end of a particular speculation execution window.
+
+			In vulnerable processors, the speculatively forwarded
+			store can be used in a cache side channel attack, for
+			example to read memory to which the attacker does not
+			directly have access (e.g. inside sandboxed code).
+
+			This parameter controls whether the Speculative Store
+			Bypass optimization is used.
+
+			on      - Unconditionally disable Speculative Store Bypass
+			off     - Unconditionally enable Speculative Store Bypass
+			auto    - Kernel detects whether the CPU model contains an
+				  implementation of Speculative Store Bypass and
+				  picks the most appropriate mitigation. If the
+				  CPU is not vulnerable, "off" is selected. If the
+				  CPU is vulnerable the default mitigation is
+				  architecture and Kconfig dependent. See below.
+			prctl   - Control Speculative Store Bypass per thread
+				  via prctl. Speculative Store Bypass is enabled
+				  for a process by default. The state of the control
+				  is inherited on fork.
+			seccomp - Same as "prctl" above, but all seccomp threads
+				  will disable SSB unless they explicitly opt out.
+
+			Not specifying this option is equivalent to
+			spec_store_bypass_disable=auto.
+
+			Default mitigations:
+			X86:	If CONFIG_SECCOMP=y "seccomp", otherwise "prctl"
+
 	spia_io_base=	[HW,MTD]
 	spia_fio_base=
 	spia_pedr=
@@ -4002,6 +4128,23 @@
 			grace period will be considered for automatic
 			expediting.  Set to zero to disable automatic
 			expediting.
+
+	ssbd=		[ARM64,HW]
+			Speculative Store Bypass Disable control
+
+			On CPUs that are vulnerable to the Speculative
+			Store Bypass vulnerability and offer a
+			firmware based mitigation, this parameter
+			indicates how the mitigation should be used:
+
+			force-on:  Unconditionally enable mitigation for
+				   for both kernel and userspace
+			force-off: Unconditionally disable mitigation for
+				   for both kernel and userspace
+			kernel:    Always enable mitigation in the
+				   kernel, and offer a prctl interface
+				   to allow userspace to register its
+				   interest in being mitigated too.
 
 	stack_guard_gap=	[MM]
 			override the default stack gap protection. The value
@@ -4351,6 +4494,64 @@
 			(default 5000 = 5.0 seconds).
 
 	usbcore.nousb	[USB] Disable the USB subsystem
+
+	usbcore.quirks=
+			[USB] A list of quirk entries to augment the built-in
+			usb core quirk list. List entries are separated by
+			commas. Each entry has the form
+			VendorID:ProductID:Flags. The IDs are 4-digit hex
+			numbers and Flags is a set of letters. Each letter
+			will change the built-in quirk; setting it if it is
+			clear and clearing it if it is set. The letters have
+			the following meanings:
+				a = USB_QUIRK_STRING_FETCH_255 (string
+					descriptors must not be fetched using
+					a 255-byte read);
+				b = USB_QUIRK_RESET_RESUME (device can't resume
+					correctly so reset it instead);
+				c = USB_QUIRK_NO_SET_INTF (device can't handle
+					Set-Interface requests);
+				d = USB_QUIRK_CONFIG_INTF_STRINGS (device can't
+					handle its Configuration or Interface
+					strings);
+				e = USB_QUIRK_RESET (device can't be reset
+					(e.g morph devices), don't use reset);
+				f = USB_QUIRK_HONOR_BNUMINTERFACES (device has
+					more interface descriptions than the
+					bNumInterfaces count, and can't handle
+					talking to these interfaces);
+				g = USB_QUIRK_DELAY_INIT (device needs a pause
+					during initialization, after we read
+					the device descriptor);
+				h = USB_QUIRK_LINEAR_UFRAME_INTR_BINTERVAL (For
+					high speed and super speed interrupt
+					endpoints, the USB 2.0 and USB 3.0 spec
+					require the interval in microframes (1
+					microframe = 125 microseconds) to be
+					calculated as interval = 2 ^
+					(bInterval-1).
+					Devices with this quirk report their
+					bInterval as the result of this
+					calculation instead of the exponent
+					variable used in the calculation);
+				i = USB_QUIRK_DEVICE_QUALIFIER (device can't
+					handle device_qualifier descriptor
+					requests);
+				j = USB_QUIRK_IGNORE_REMOTE_WAKEUP (device
+					generates spurious wakeup, ignore
+					remote wakeup capability);
+				k = USB_QUIRK_NO_LPM (device can't handle Link
+					Power Management);
+				l = USB_QUIRK_LINEAR_FRAME_INTR_BINTERVAL
+					(Device reports its bInterval as linear
+					frames instead of the USB 2.0
+					calculation);
+				m = USB_QUIRK_DISCONNECT_SUSPEND (Device needs
+					to be disconnected before suspend to
+					prevent spurious wakeup);
+				n = USB_QUIRK_DELAY_CTRL_MSG (Device needs a
+					pause after every control message);
+			Example: quirks=0781:5580:bk,0a5c:5834:gij
 
 	usbhid.mousepoll=
 			[USBHID] The interval which mice are to be polled at.

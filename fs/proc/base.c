@@ -100,6 +100,8 @@
 #include "internal.h"
 #include "fd.h"
 
+#include "../../lib/kstrtox.h"
+
 /* NOTE:
  *	Implementing inode permission operations in /proc is almost
  *	certainly an error.  Permission checks need to happen during
@@ -140,9 +142,13 @@ struct pid_entry {
 #define REG(NAME, MODE, fops)				\
 	NOD(NAME, (S_IFREG|(MODE)), NULL, &fops, {})
 #define ONE(NAME, MODE, show)				\
-	NOD(NAME, (S_IFREG|(MODE)), 			\
+	NOD(NAME, (S_IFREG|(MODE)),			\
 		NULL, &proc_single_file_operations,	\
 		{ .proc_show = show } )
+#define ATTR(LSM, NAME, MODE)				\
+	NOD(NAME, (S_IFREG|(MODE)),			\
+		NULL, &proc_pid_attr_operations,	\
+		{ .lsm = LSM })
 
 /*
  * Count the number of hardlinks for the pid_entry table, excluding the .
@@ -261,7 +267,7 @@ static ssize_t proc_pid_cmdline_read(struct file *file, char __user *buf,
 	 * Inherently racy -- command line shares address space
 	 * with code and data.
 	 */
-	rv = access_remote_vm(mm, arg_end - 1, &c, 1, 0);
+	rv = access_remote_vm(mm, arg_end - 1, &c, 1, FOLL_ANON);
 	if (rv <= 0)
 		goto out_free_page;
 
@@ -279,7 +285,7 @@ static ssize_t proc_pid_cmdline_read(struct file *file, char __user *buf,
 			int nr_read;
 
 			_count = min3(count, len, PAGE_SIZE);
-			nr_read = access_remote_vm(mm, p, page, _count, 0);
+			nr_read = access_remote_vm(mm, p, page, _count, FOLL_ANON);
 			if (nr_read < 0)
 				rv = nr_read;
 			if (nr_read <= 0)
@@ -325,7 +331,7 @@ static ssize_t proc_pid_cmdline_read(struct file *file, char __user *buf,
 				bool final;
 
 				_count = min3(count, len, PAGE_SIZE);
-				nr_read = access_remote_vm(mm, p, page, _count, 0);
+				nr_read = access_remote_vm(mm, p, page, _count, FOLL_ANON);
 				if (nr_read < 0)
 					rv = nr_read;
 				if (nr_read <= 0)
@@ -664,8 +670,15 @@ int proc_setattr(struct dentry *dentry, struct iattr *attr)
 {
 	int error;
 	struct inode *inode = d_inode(dentry);
+	struct user_namespace *s_user_ns;
 
 	if (attr->ia_valid & ATTR_MODE)
+		return -EPERM;
+
+	/* Don't let anyone mess with weird proc files */
+	s_user_ns = inode->i_sb->s_user_ns;
+	if (!kuid_has_mapping(s_user_ns, inode->i_uid) ||
+	    !kgid_has_mapping(s_user_ns, inode->i_gid))
 		return -EPERM;
 
 	error = setattr_prepare(dentry, attr);
@@ -943,7 +956,7 @@ static ssize_t environ_read(struct file *file, char __user *buf,
 		max_len = min_t(size_t, PAGE_SIZE, count);
 		this_len = min(max_len, this_len);
 
-		retval = access_remote_vm(mm, (env_start + src), page, this_len, 0);
+		retval = access_remote_vm(mm, (env_start + src), page, this_len, FOLL_ANON);
 
 		if (retval <= 0) {
 			ret = retval;
@@ -1691,6 +1704,12 @@ void task_dump_owner(struct task_struct *task, umode_t mode,
 	kuid_t uid;
 	kgid_t gid;
 
+	if (unlikely(task->flags & PF_KTHREAD)) {
+		*ruid = GLOBAL_ROOT_UID;
+		*rgid = GLOBAL_ROOT_GID;
+		return;
+	}
+
 	/* Default to the tasks effective ownership */
 	rcu_read_lock();
 	cred = __task_cred(task);
@@ -1907,8 +1926,33 @@ end_instantiate:
 static int dname_to_vma_addr(struct dentry *dentry,
 			     unsigned long *start, unsigned long *end)
 {
-	if (sscanf(dentry->d_name.name, "%lx-%lx", start, end) != 2)
+	const char *str = dentry->d_name.name;
+	unsigned long long sval, eval;
+	unsigned int len;
+
+	len = _parse_integer(str, 16, &sval);
+	if (len & KSTRTOX_OVERFLOW)
 		return -EINVAL;
+	if (sval != (unsigned long)sval)
+		return -EINVAL;
+	str += len;
+
+	if (*str != '-')
+		return -EINVAL;
+	str++;
+
+	len = _parse_integer(str, 16, &eval);
+	if (len & KSTRTOX_OVERFLOW)
+		return -EINVAL;
+	if (eval != (unsigned long)eval)
+		return -EINVAL;
+	str += len;
+
+	if (*str != '\0')
+		return -EINVAL;
+
+	*start = sval;
+	*end = eval;
 
 	return 0;
 }
@@ -1987,7 +2031,7 @@ static int map_files_get_link(struct dentry *dentry, struct path *path)
 	down_read(&mm->mmap_sem);
 	vma = find_exact_vma(mm, vm_start, vm_end);
 	if (vma && vma->vm_file) {
-		*path = vma->vm_file->f_path;
+		*path = vma_pr_or_file(vma)->f_path;
 		path_get(path);
 		rc = 0;
 	}
@@ -2496,7 +2540,7 @@ static ssize_t proc_pid_attr_read(struct file * file, char __user * buf,
 	if (!task)
 		return -ESRCH;
 
-	length = security_getprocattr(task,
+	length = security_getprocattr(task, PROC_I(inode)->op.lsm,
 				      (char*)file->f_path.dentry->d_name.name,
 				      &p);
 	put_task_struct(task);
@@ -2542,7 +2586,8 @@ static ssize_t proc_pid_attr_write(struct file * file, const char __user * buf,
 	if (length < 0)
 		goto out_free;
 
-	length = security_setprocattr(file->f_path.dentry->d_name.name,
+	length = security_setprocattr(PROC_I(inode)->op.lsm,
+				      file->f_path.dentry->d_name.name,
 				      page, count);
 	mutex_unlock(&current->signal->cred_guard_mutex);
 out_free:
@@ -2559,13 +2604,86 @@ static const struct file_operations proc_pid_attr_operations = {
 	.llseek		= generic_file_llseek,
 };
 
+#define LSM_DIR_OPS(LSM) \
+static int proc_##LSM##_attr_dir_iterate(struct file *filp, \
+			     struct dir_context *ctx) \
+{ \
+	return proc_pident_readdir(filp, ctx, \
+				   LSM##_attr_dir_stuff, \
+				   ARRAY_SIZE(LSM##_attr_dir_stuff)); \
+} \
+\
+static const struct file_operations proc_##LSM##_attr_dir_ops = { \
+	.read		= generic_read_dir, \
+	.iterate	= proc_##LSM##_attr_dir_iterate, \
+	.llseek		= default_llseek, \
+}; \
+\
+static struct dentry *proc_##LSM##_attr_dir_lookup(struct inode *dir, \
+				struct dentry *dentry, unsigned int flags) \
+{ \
+	return proc_pident_lookup(dir, dentry, \
+				  LSM##_attr_dir_stuff, \
+				  ARRAY_SIZE(LSM##_attr_dir_stuff)); \
+} \
+\
+static const struct inode_operations proc_##LSM##_attr_dir_inode_ops = { \
+	.lookup		= proc_##LSM##_attr_dir_lookup, \
+	.getattr	= pid_getattr, \
+	.setattr	= proc_setattr, \
+}
+
+#ifdef CONFIG_SECURITY_SELINUX
+static const struct pid_entry selinux_attr_dir_stuff[] = {
+	ATTR("selinux", "current",      0666),
+	ATTR("selinux", "prev",         0444),
+	ATTR("selinux", "exec",         0666),
+	ATTR("selinux", "fscreate",     0666),
+	ATTR("selinux", "keycreate",    0666),
+	ATTR("selinux", "sockcreate",   0666),
+};
+LSM_DIR_OPS(selinux);
+#endif
+
+#ifdef CONFIG_SECURITY_SMACK
+static const struct pid_entry smack_attr_dir_stuff[] = {
+	ATTR("smack", "current",	0666),
+};
+LSM_DIR_OPS(smack);
+#endif
+
+#ifdef CONFIG_SECURITY_APPARMOR
+static const struct pid_entry apparmor_attr_dir_stuff[] = {
+	ATTR("apparmor", "current",     0666),
+	ATTR("apparmor", "prev",        0444),
+	ATTR("apparmor", "exec",        0666),
+};
+LSM_DIR_OPS(apparmor);
+#endif
+
 static const struct pid_entry attr_dir_stuff[] = {
-	REG("current",    S_IRUGO|S_IWUGO, proc_pid_attr_operations),
-	REG("prev",       S_IRUGO,	   proc_pid_attr_operations),
-	REG("exec",       S_IRUGO|S_IWUGO, proc_pid_attr_operations),
-	REG("fscreate",   S_IRUGO|S_IWUGO, proc_pid_attr_operations),
-	REG("keycreate",  S_IRUGO|S_IWUGO, proc_pid_attr_operations),
-	REG("sockcreate", S_IRUGO|S_IWUGO, proc_pid_attr_operations),
+	ATTR(NULL, "current",		0666),
+	ATTR(NULL, "prev",		0444),
+	ATTR(NULL, "exec",		0666),
+	ATTR(NULL, "fscreate",		0666),
+	ATTR(NULL, "keycreate",		0666),
+	ATTR(NULL, "sockcreate",	0666),
+	ATTR(NULL, "display_lsm",	0666),
+
+#ifdef CONFIG_SECURITY_SELINUX
+	DIR("selinux",			0555,
+	    proc_selinux_attr_dir_inode_ops, proc_selinux_attr_dir_ops),
+#endif
+
+#ifdef CONFIG_SECURITY_SMACK
+	DIR("smack",			0555,
+	    proc_smack_attr_dir_inode_ops, proc_smack_attr_dir_ops),
+#endif
+
+#ifdef CONFIG_SECURITY_APPARMOR
+	DIR("apparmor",                 0555,
+	    proc_apparmor_attr_dir_inode_ops, proc_apparmor_attr_dir_ops),
+#endif
 };
 
 static int proc_attr_dir_readdir(struct file *file, struct dir_context *ctx)

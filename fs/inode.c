@@ -1655,7 +1655,7 @@ EXPORT_SYMBOL(generic_update_time);
  * This does the actual work of updating an inodes time or version.  Must have
  * had called mnt_want_write() before calling this.
  */
-static int update_time(struct inode *inode, struct timespec *time, int flags)
+int update_time(struct inode *inode, struct timespec *time, int flags)
 {
 	int (*update_time)(struct inode *, struct timespec *, int);
 
@@ -1664,6 +1664,7 @@ static int update_time(struct inode *inode, struct timespec *time, int flags)
 
 	return update_time(inode, time, flags);
 }
+EXPORT_SYMBOL_GPL(update_time);
 
 /**
  *	touch_atime	-	update the access time
@@ -1749,7 +1750,8 @@ EXPORT_SYMBOL(touch_atime);
  */
 int should_remove_suid(struct dentry *dentry)
 {
-	umode_t mode = d_inode(dentry)->i_mode;
+	struct inode *inode = d_inode(dentry);
+	umode_t mode = inode->i_mode;
 	int kill = 0;
 
 	/* suid always must be killed */
@@ -1763,7 +1765,8 @@ int should_remove_suid(struct dentry *dentry)
 	if (unlikely((mode & S_ISGID) && (mode & S_IXGRP)))
 		kill |= ATTR_KILL_SGID;
 
-	if (unlikely(kill && !capable(CAP_FSETID) && S_ISREG(mode)))
+	if (unlikely(kill && !capable_wrt_inode_uidgid(inode, CAP_FSETID) &&
+		     S_ISREG(mode)))
 		return kill;
 
 	return 0;
@@ -2005,8 +2008,14 @@ void inode_init_owner(struct inode *inode, const struct inode *dir,
 	inode->i_uid = current_fsuid();
 	if (dir && dir->i_mode & S_ISGID) {
 		inode->i_gid = dir->i_gid;
+
+		/* Directories are special, and always inherit S_ISGID */
 		if (S_ISDIR(mode))
 			mode |= S_ISGID;
+		else if ((mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP) &&
+			 !in_group_p(inode->i_gid) &&
+			 !capable_wrt_inode_uidgid(dir, CAP_FSETID))
+			mode &= ~S_ISGID;
 	} else
 		inode->i_gid = current_fsgid();
 	inode->i_mode = mode;

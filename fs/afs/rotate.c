@@ -179,7 +179,7 @@ bool afs_select_fileserver(struct afs_fs_cursor *fc)
 			 */
 			if (fc->flags & AFS_FS_CURSOR_VNOVOL) {
 				fc->ac.error = -EREMOTEIO;
-				goto failed;
+				goto next_server;
 			}
 
 			write_lock(&vnode->volume->servers_lock);
@@ -201,7 +201,7 @@ bool afs_select_fileserver(struct afs_fs_cursor *fc)
 			 */
 			if (vnode->volume->servers == fc->server_list) {
 				fc->ac.error = -EREMOTEIO;
-				goto failed;
+				goto next_server;
 			}
 
 			/* Try again */
@@ -334,6 +334,7 @@ start:
 
 next_server:
 	_debug("next");
+	afs_end_cursor(&fc->ac);
 	afs_put_cb_interest(afs_v2net(vnode), fc->cbi);
 	fc->cbi = NULL;
 	fc->index++;
@@ -370,8 +371,8 @@ use_server:
 	 * break request before we've finished decoding the reply and
 	 * installing the vnode.
 	 */
-	fc->ac.error = afs_register_server_cb_interest(
-		vnode, &fc->server_list->servers[fc->index]);
+	fc->ac.error = afs_register_server_cb_interest(vnode, fc->server_list,
+						       fc->index);
 	if (fc->ac.error < 0)
 		goto failed;
 
@@ -383,13 +384,22 @@ use_server:
 	afs_get_addrlist(alist);
 	read_unlock(&server->fs_lock);
 
+	memset(&fc->ac, 0, sizeof(fc->ac));
 
 	/* Probe the current fileserver if we haven't done so yet. */
 	if (!test_bit(AFS_SERVER_FL_PROBED, &server->flags)) {
 		fc->ac.alist = afs_get_addrlist(alist);
 
-		if (!afs_probe_fileserver(fc))
-			goto failed;
+		if (!afs_probe_fileserver(fc)) {
+			switch (fc->ac.error) {
+			case -ENOMEM:
+			case -ERESTARTSYS:
+			case -EINTR:
+				goto failed;
+			default:
+				goto next_server;
+			}
+		}
 	}
 
 	if (!fc->ac.alist)
@@ -397,11 +407,8 @@ use_server:
 	else
 		afs_put_addrlist(alist);
 
-	fc->ac.addr  = NULL;
 	fc->ac.start = READ_ONCE(alist->index);
 	fc->ac.index = fc->ac.start;
-	fc->ac.error = 0;
-	fc->ac.begun = false;
 	goto iterate_address;
 
 iterate_address:
@@ -410,16 +417,15 @@ iterate_address:
 	/* Iterate over the current server's address list to try and find an
 	 * address on which it will respond to us.
 	 */
-	if (afs_iterate_addresses(&fc->ac)) {
-		_leave(" = t");
-		return true;
-	}
+	if (!afs_iterate_addresses(&fc->ac))
+		goto next_server;
 
-	afs_end_cursor(&fc->ac);
-	goto next_server;
+	_leave(" = t");
+	return true;
 
 failed:
 	fc->flags |= AFS_FS_CURSOR_STOP;
+	afs_end_cursor(&fc->ac);
 	_leave(" = f [failed %d]", fc->ac.error);
 	return false;
 }
@@ -458,12 +464,10 @@ bool afs_select_current_fileserver(struct afs_fs_cursor *fc)
 			return false;
 		}
 
+		memset(&fc->ac, 0, sizeof(fc->ac));
 		fc->ac.alist = alist;
-		fc->ac.addr  = NULL;
 		fc->ac.start = READ_ONCE(alist->index);
 		fc->ac.index = fc->ac.start;
-		fc->ac.error = 0;
-		fc->ac.begun = false;
 		goto iterate_address;
 
 	case 0:

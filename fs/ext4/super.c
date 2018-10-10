@@ -40,6 +40,7 @@
 #include <linux/dax.h>
 #include <linux/cleancache.h>
 #include <linux/uaccess.h>
+#include <linux/user_namespace.h>
 
 #include <linux/kthread.h>
 #include <linux/freezer.h>
@@ -113,13 +114,17 @@ static struct inode *ext4_get_journal_inode(struct super_block *sb,
  * transaction start -> page lock(s) -> i_data_sem (rw)
  */
 
+static bool userns_mounts = false;
+module_param(userns_mounts, bool, 0644);
+MODULE_PARM_DESC(userns_mounts, "Allow mounts from unprivileged user namespaces");
+
 #if !defined(CONFIG_EXT2_FS) && !defined(CONFIG_EXT2_FS_MODULE) && defined(CONFIG_EXT4_USE_FOR_EXT2)
 static struct file_system_type ext2_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "ext2",
 	.mount		= ext4_mount,
 	.kill_sb	= kill_block_super,
-	.fs_flags	= FS_REQUIRES_DEV,
+	.fs_flags	= FS_REQUIRES_DEV | FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("ext2");
 MODULE_ALIAS("ext2");
@@ -134,7 +139,7 @@ static struct file_system_type ext3_fs_type = {
 	.name		= "ext3",
 	.mount		= ext4_mount,
 	.kill_sb	= kill_block_super,
-	.fs_flags	= FS_REQUIRES_DEV,
+	.fs_flags	= FS_REQUIRES_DEV | FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("ext3");
 MODULE_ALIAS("ext3");
@@ -742,6 +747,7 @@ __acquires(bitlock)
 	}
 
 	ext4_unlock_group(sb, grp);
+	ext4_commit_super(sb, 1);
 	ext4_handle_error(sb);
 	/*
 	 * We only get here in the ERRORS_RO case; relocking the group
@@ -1710,6 +1716,13 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 		return -1;
 	}
 
+	if (token == Opt_err_panic && !capable(CAP_SYS_ADMIN)) {
+		ext4_msg(sb, KERN_ERR,
+			 "Mount option \"%s\" not allowed for unprivileged mounts",
+			 opt);
+		return -1;
+	}
+
 	if (args->from && !(m->flags & MOPT_STRING) && match_int(args, &arg))
 		return -1;
 	if (args->from && (m->flags & MOPT_GTE0) && (arg < 0))
@@ -1760,14 +1773,14 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 	} else if (token == Opt_stripe) {
 		sbi->s_stripe = arg;
 	} else if (token == Opt_resuid) {
-		uid = make_kuid(current_user_ns(), arg);
+		uid = make_kuid(sb->s_user_ns, arg);
 		if (!uid_valid(uid)) {
 			ext4_msg(sb, KERN_ERR, "Invalid uid value %d", arg);
 			return -1;
 		}
 		sbi->s_resuid = uid;
 	} else if (token == Opt_resgid) {
-		gid = make_kgid(current_user_ns(), arg);
+		gid = make_kgid(sb->s_user_ns, arg);
 		if (!gid_valid(gid)) {
 			ext4_msg(sb, KERN_ERR, "Invalid gid value %d", arg);
 			return -1;
@@ -1803,6 +1816,19 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 			ext4_msg(sb, KERN_ERR, "error: could not find "
 				"journal device path: error %d", error);
 			kfree(journal_path);
+			return -1;
+		}
+
+		/*
+		 * Refuse access for unprivileged mounts if the user does
+		 * not have rw access to the journal device via the supplied
+		 * path.
+		 */
+		if (!capable(CAP_SYS_ADMIN) &&
+		    inode_permission(d_inode(path.dentry), MAY_READ|MAY_WRITE)) {
+			ext4_msg(sb, KERN_ERR,
+				 "error: Insufficient access to journal path %s",
+				 journal_path);
 			return -1;
 		}
 
@@ -2041,14 +2067,14 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
 		SEQ_OPTS_PRINT("%s", token2str(m->token));
 	}
 
-	if (nodefs || !uid_eq(sbi->s_resuid, make_kuid(&init_user_ns, EXT4_DEF_RESUID)) ||
+	if (nodefs || !uid_eq(sbi->s_resuid, make_kuid(sb->s_user_ns, EXT4_DEF_RESUID)) ||
 	    le16_to_cpu(es->s_def_resuid) != EXT4_DEF_RESUID)
 		SEQ_OPTS_PRINT("resuid=%u",
-				from_kuid_munged(&init_user_ns, sbi->s_resuid));
-	if (nodefs || !gid_eq(sbi->s_resgid, make_kgid(&init_user_ns, EXT4_DEF_RESGID)) ||
+				from_kuid_munged(sb->s_user_ns, sbi->s_resuid));
+	if (nodefs || !gid_eq(sbi->s_resgid, make_kgid(sb->s_user_ns, EXT4_DEF_RESGID)) ||
 	    le16_to_cpu(es->s_def_resgid) != EXT4_DEF_RESGID)
 		SEQ_OPTS_PRINT("resgid=%u",
-				from_kgid_munged(&init_user_ns, sbi->s_resgid));
+				from_kgid_munged(sb->s_user_ns, sbi->s_resgid));
 	def_errors = nodefs ? -1 : le16_to_cpu(es->s_errors);
 	if (test_opt(sb, ERRORS_RO) && def_errors != EXT4_ERRORS_RO)
 		SEQ_OPTS_PUTS("errors=remount-ro");
@@ -2331,6 +2357,8 @@ static int ext4_check_descriptors(struct super_block *sb,
 			ext4_msg(sb, KERN_ERR, "ext4_check_descriptors: "
 				 "Block bitmap for group %u overlaps "
 				 "superblock", i);
+			if (!sb_rdonly(sb))
+				return 0;
 		}
 		if (block_bitmap < first_block || block_bitmap > last_block) {
 			ext4_msg(sb, KERN_ERR, "ext4_check_descriptors: "
@@ -2343,6 +2371,8 @@ static int ext4_check_descriptors(struct super_block *sb,
 			ext4_msg(sb, KERN_ERR, "ext4_check_descriptors: "
 				 "Inode bitmap for group %u overlaps "
 				 "superblock", i);
+			if (!sb_rdonly(sb))
+				return 0;
 		}
 		if (inode_bitmap < first_block || inode_bitmap > last_block) {
 			ext4_msg(sb, KERN_ERR, "ext4_check_descriptors: "
@@ -2355,6 +2385,8 @@ static int ext4_check_descriptors(struct super_block *sb,
 			ext4_msg(sb, KERN_ERR, "ext4_check_descriptors: "
 				 "Inode table for group %u overlaps "
 				 "superblock", i);
+			if (!sb_rdonly(sb))
+				return 0;
 		}
 		if (inode_table < first_block ||
 		    inode_table + sbi->s_itb_per_group - 1 > last_block) {
@@ -3422,6 +3454,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	if ((data && !orig_data) || !sbi)
 		goto out_free_base;
 
+	if (!userns_mounts && !capable(CAP_SYS_ADMIN)) {
+		ret = -EPERM;
+		goto out_free_base;
+	}
+
 	sbi->s_daxdev = dax_dev;
 	sbi->s_blockgroup_lock =
 		kzalloc(sizeof(struct blockgroup_lock), GFP_KERNEL);
@@ -3488,15 +3525,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	/* Load the checksum driver */
-	if (ext4_has_feature_metadata_csum(sb) ||
-	    ext4_has_feature_ea_inode(sb)) {
-		sbi->s_chksum_driver = crypto_alloc_shash("crc32c", 0, 0);
-		if (IS_ERR(sbi->s_chksum_driver)) {
-			ext4_msg(sb, KERN_ERR, "Cannot load crc32c driver.");
-			ret = PTR_ERR(sbi->s_chksum_driver);
-			sbi->s_chksum_driver = NULL;
-			goto failed_mount;
-		}
+	sbi->s_chksum_driver = crypto_alloc_shash("crc32c", 0, 0);
+	if (IS_ERR(sbi->s_chksum_driver)) {
+		ext4_msg(sb, KERN_ERR, "Cannot load crc32c driver.");
+		ret = PTR_ERR(sbi->s_chksum_driver);
+		sbi->s_chksum_driver = NULL;
+		goto failed_mount;
 	}
 
 	/* Check superblock checksum */
@@ -3540,19 +3574,26 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	else if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_WBACK)
 		set_opt(sb, WRITEBACK_DATA);
 
-	if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_PANIC)
+	if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_PANIC) {
+		if (!capable(CAP_SYS_ADMIN))
+			goto failed_mount;
 		set_opt(sb, ERRORS_PANIC);
-	else if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_CONTINUE)
+	} else if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_CONTINUE) {
 		set_opt(sb, ERRORS_CONT);
-	else
+	} else {
 		set_opt(sb, ERRORS_RO);
+	}
 	/* block_validity enabled by default; disable with noblock_validity */
 	set_opt(sb, BLOCK_VALIDITY);
 	if (def_mount_opts & EXT4_DEFM_DISCARD)
 		set_opt(sb, DISCARD);
 
-	sbi->s_resuid = make_kuid(&init_user_ns, le16_to_cpu(es->s_def_resuid));
-	sbi->s_resgid = make_kgid(&init_user_ns, le16_to_cpu(es->s_def_resgid));
+	sbi->s_resuid = make_kuid(sb->s_user_ns, le16_to_cpu(es->s_def_resuid));
+	if (!uid_valid(sbi->s_resuid))
+		sbi->s_resuid = make_kuid(sb->s_user_ns, EXT4_DEF_RESUID);
+	sbi->s_resgid = make_kgid(sb->s_user_ns, le16_to_cpu(es->s_def_resgid));
+	if (!gid_valid(sbi->s_resgid))
+		sbi->s_resgid = make_kgid(sb->s_user_ns, EXT4_DEF_RESGID);
 	sbi->s_commit_interval = JBD2_DEFAULT_MAX_COMMIT_AGE * HZ;
 	sbi->s_min_batch_time = EXT4_DEF_MIN_BATCH_TIME;
 	sbi->s_max_batch_time = EXT4_DEF_MAX_BATCH_TIME;
@@ -3658,6 +3699,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 			ext4_msg(sb, KERN_INFO, "mounting ext2 file system "
 				 "using the ext4 subsystem");
 		else {
+			/*
+			 * If we're probing be silent, if this looks like
+			 * it's actually an ext[34] filesystem.
+			 */
+			if (silent && ext4_feature_set_ok(sb, sb_rdonly(sb)))
+				goto failed_mount;
 			ext4_msg(sb, KERN_ERR, "couldn't mount as ext2 due "
 				 "to feature incompatibilities");
 			goto failed_mount;
@@ -3669,6 +3716,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 			ext4_msg(sb, KERN_INFO, "mounting ext3 file system "
 				 "using the ext4 subsystem");
 		else {
+			/*
+			 * If we're probing be silent, if this looks like
+			 * it's actually an ext4 filesystem.
+			 */
+			if (silent && ext4_feature_set_ok(sb, sb_rdonly(sb)))
+				goto failed_mount;
 			ext4_msg(sb, KERN_ERR, "couldn't mount as ext3 due "
 				 "to feature incompatibilities");
 			goto failed_mount;
@@ -3710,11 +3763,14 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		if (ext4_has_feature_inline_data(sb)) {
 			ext4_msg(sb, KERN_ERR, "Cannot use DAX on a filesystem"
 					" that may contain inline data");
-			goto failed_mount;
+			sbi->s_mount_opt &= ~EXT4_MOUNT_DAX;
 		}
 		err = bdev_dax_supported(sb, blocksize);
-		if (err)
-			goto failed_mount;
+		if (err) {
+			ext4_msg(sb, KERN_ERR,
+				"DAX unsupported by block device. Turning off DAX.");
+			sbi->s_mount_opt &= ~EXT4_MOUNT_DAX;
+		}
 	}
 
 	if (ext4_has_feature_encrypt(sb) && es->s_encryption_level) {
@@ -4398,6 +4454,7 @@ failed_mount:
 	ext4_blkdev_remove(sbi);
 	brelse(bh);
 out_fail:
+	/* sb->s_user_ns will be put when sb is destroyed */
 	sb->s_fs_info = NULL;
 	kfree(sbi->s_blockgroup_lock);
 out_free_base:
@@ -5775,7 +5832,7 @@ static struct file_system_type ext4_fs_type = {
 	.name		= "ext4",
 	.mount		= ext4_mount,
 	.kill_sb	= kill_block_super,
-	.fs_flags	= FS_REQUIRES_DEV,
+	.fs_flags	= FS_REQUIRES_DEV | FS_USERNS_MOUNT,
 };
 MODULE_ALIAS_FS("ext4");
 
@@ -5860,5 +5917,6 @@ static void __exit ext4_exit_fs(void)
 MODULE_AUTHOR("Remy Card, Stephen Tweedie, Andrew Morton, Andreas Dilger, Theodore Ts'o and others");
 MODULE_DESCRIPTION("Fourth Extended Filesystem");
 MODULE_LICENSE("GPL");
+MODULE_SOFTDEP("pre: crc32c");
 module_init(ext4_init_fs)
 module_exit(ext4_exit_fs)

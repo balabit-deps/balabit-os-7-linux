@@ -279,7 +279,7 @@ static void print_verifier_state(struct bpf_verifier_env *env,
 	for (i = 0; i < state->allocated_stack / BPF_REG_SIZE; i++) {
 		if (state->stack[i].slot_type[0] == STACK_SPILL)
 			verbose(env, " fp%d=%s",
-				-MAX_BPF_STACK + i * BPF_REG_SIZE,
+				(-i - 1) * BPF_REG_SIZE,
 				reg_type_str[state->stack[i].spilled_ptr.type]);
 	}
 	verbose(env, "\n");
@@ -691,7 +691,7 @@ static bool is_spillable_regtype(enum bpf_reg_type type)
  */
 static int check_stack_write(struct bpf_verifier_env *env,
 			     struct bpf_verifier_state *state, int off,
-			     int size, int value_regno)
+			     int size, int value_regno, int insn_idx)
 {
 	int i, slot = -off - 1, spi = slot / BPF_REG_SIZE, err;
 
@@ -722,8 +722,33 @@ static int check_stack_write(struct bpf_verifier_env *env,
 		state->stack[spi].spilled_ptr = state->regs[value_regno];
 		state->stack[spi].spilled_ptr.live |= REG_LIVE_WRITTEN;
 
-		for (i = 0; i < BPF_REG_SIZE; i++)
+		for (i = 0; i < BPF_REG_SIZE; i++) {
+			if (state->stack[spi].slot_type[i] == STACK_MISC &&
+			    !env->allow_ptr_leaks) {
+				int *poff = &env->insn_aux_data[insn_idx].sanitize_stack_off;
+				int soff = (-spi - 1) * BPF_REG_SIZE;
+
+				/* detected reuse of integer stack slot with a pointer
+				 * which means either llvm is reusing stack slot or
+				 * an attacker is trying to exploit CVE-2018-3639
+				 * (speculative store bypass)
+				 * Have to sanitize that slot with preemptive
+				 * store of zero.
+				 */
+				if (*poff && *poff != soff) {
+					/* disallow programs where single insn stores
+					 * into two different stack slots, since verifier
+					 * cannot sanitize them
+					 */
+					verbose(env,
+						"insn %d cannot access two stack slots fp%d and fp%d",
+						insn_idx, *poff, soff);
+					return -EINVAL;
+				}
+				*poff = soff;
+			}
 			state->stack[spi].slot_type[i] = STACK_SPILL;
+		}
 	} else {
 		/* regular write of data into stack */
 		state->stack[spi].spilled_ptr = (struct bpf_reg_state) {};
@@ -985,6 +1010,13 @@ static bool is_ctx_reg(struct bpf_verifier_env *env, int regno)
 	return reg->type == PTR_TO_CTX;
 }
 
+static bool is_pkt_reg(struct bpf_verifier_env *env, int regno)
+{
+	const struct bpf_reg_state *reg = cur_regs(env) + regno;
+
+	return type_is_pkt_pointer(reg->type);
+}
+
 static int check_pkt_ptr_alignment(struct bpf_verifier_env *env,
 				   const struct bpf_reg_state *reg,
 				   int off, int size, bool strict)
@@ -1045,10 +1077,10 @@ static int check_generic_ptr_alignment(struct bpf_verifier_env *env,
 }
 
 static int check_ptr_alignment(struct bpf_verifier_env *env,
-			       const struct bpf_reg_state *reg,
-			       int off, int size)
+			       const struct bpf_reg_state *reg, int off,
+			       int size, bool strict_alignment_once)
 {
-	bool strict = env->strict_alignment;
+	bool strict = env->strict_alignment || strict_alignment_once;
 	const char *pointer_desc = "";
 
 	switch (reg->type) {
@@ -1108,9 +1140,9 @@ static void coerce_reg_to_size(struct bpf_reg_state *reg, int size)
  * if t==write && value_regno==-1, some unknown value is stored into memory
  * if t==read && value_regno==-1, don't care what we read from memory
  */
-static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regno, int off,
-			    int bpf_size, enum bpf_access_type t,
-			    int value_regno)
+static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regno,
+			    int off, int bpf_size, enum bpf_access_type t,
+			    int value_regno, bool strict_alignment_once)
 {
 	struct bpf_verifier_state *state = env->cur_state;
 	struct bpf_reg_state *regs = cur_regs(env);
@@ -1122,7 +1154,7 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
 		return size;
 
 	/* alignment checks will add in reg->off themselves */
-	err = check_ptr_alignment(env, reg, off, size);
+	err = check_ptr_alignment(env, reg, off, size, strict_alignment_once);
 	if (err)
 		return err;
 
@@ -1208,7 +1240,7 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
 
 		if (t == BPF_WRITE)
 			err = check_stack_write(env, state, off, size,
-						value_regno);
+						value_regno, insn_idx);
 		else
 			err = check_stack_read(env, state, off, size,
 					       value_regno);
@@ -1265,21 +1297,23 @@ static int check_xadd(struct bpf_verifier_env *env, int insn_idx, struct bpf_ins
 		return -EACCES;
 	}
 
-	if (is_ctx_reg(env, insn->dst_reg)) {
-		verbose(env, "BPF_XADD stores into R%d context is not allowed\n",
-			insn->dst_reg);
+	if (is_ctx_reg(env, insn->dst_reg) ||
+	    is_pkt_reg(env, insn->dst_reg)) {
+		verbose(env, "BPF_XADD stores into R%d %s is not allowed\n",
+			insn->dst_reg, is_ctx_reg(env, insn->dst_reg) ?
+			"context" : "packet");
 		return -EACCES;
 	}
 
 	/* check whether atomic_add can read the memory */
 	err = check_mem_access(env, insn_idx, insn->dst_reg, insn->off,
-			       BPF_SIZE(insn->code), BPF_READ, -1);
+			       BPF_SIZE(insn->code), BPF_READ, -1, true);
 	if (err)
 		return err;
 
 	/* check whether atomic_add can write into the same memory */
 	return check_mem_access(env, insn_idx, insn->dst_reg, insn->off,
-				BPF_SIZE(insn->code), BPF_WRITE, -1);
+				BPF_SIZE(insn->code), BPF_WRITE, -1, true);
 }
 
 /* Does this register contain a constant zero? */
@@ -1763,7 +1797,8 @@ static int check_call(struct bpf_verifier_env *env, int func_id, int insn_idx)
 	 * is inferred from register state.
 	 */
 	for (i = 0; i < meta.access_size; i++) {
-		err = check_mem_access(env, insn_idx, meta.regno, i, BPF_B, BPF_WRITE, -1);
+		err = check_mem_access(env, insn_idx, meta.regno, i, BPF_B,
+				       BPF_WRITE, -1, false);
 		if (err)
 			return err;
 	}
@@ -3933,7 +3968,7 @@ static int do_check(struct bpf_verifier_env *env)
 			 */
 			err = check_mem_access(env, insn_idx, insn->src_reg, insn->off,
 					       BPF_SIZE(insn->code), BPF_READ,
-					       insn->dst_reg);
+					       insn->dst_reg, false);
 			if (err)
 				return err;
 
@@ -3985,7 +4020,7 @@ static int do_check(struct bpf_verifier_env *env)
 			/* check that memory (dst_reg + off) is writeable */
 			err = check_mem_access(env, insn_idx, insn->dst_reg, insn->off,
 					       BPF_SIZE(insn->code), BPF_WRITE,
-					       insn->src_reg);
+					       insn->src_reg, false);
 			if (err)
 				return err;
 
@@ -4020,7 +4055,7 @@ static int do_check(struct bpf_verifier_env *env)
 			/* check that memory (dst_reg + off) is writeable */
 			err = check_mem_access(env, insn_idx, insn->dst_reg, insn->off,
 					       BPF_SIZE(insn->code), BPF_WRITE,
-					       -1);
+					       -1, false);
 			if (err)
 				return err;
 
@@ -4388,6 +4423,34 @@ static int convert_ctx_accesses(struct bpf_verifier_env *env)
 			type = BPF_WRITE;
 		else
 			continue;
+
+		if (type == BPF_WRITE &&
+		    env->insn_aux_data[i + delta].sanitize_stack_off) {
+			struct bpf_insn patch[] = {
+				/* Sanitize suspicious stack slot with zero.
+				 * There are no memory dependencies for this store,
+				 * since it's only using frame pointer and immediate
+				 * constant of zero
+				 */
+				BPF_ST_MEM(BPF_DW, BPF_REG_FP,
+					   env->insn_aux_data[i + delta].sanitize_stack_off,
+					   0),
+				/* the original STX instruction will immediately
+				 * overwrite the same stack slot with appropriate value
+				 */
+				*insn,
+			};
+
+			cnt = ARRAY_SIZE(patch);
+			new_prog = bpf_patch_insn_data(env, i + delta, patch, cnt);
+			if (!new_prog)
+				return -ENOMEM;
+
+			delta    += cnt - 1;
+			env->prog = new_prog;
+			insn      = new_prog->insnsi + i + delta;
+			continue;
+		}
 
 		if (env->insn_aux_data[i + delta].ptr_type != PTR_TO_CTX)
 			continue;

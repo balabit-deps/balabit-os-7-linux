@@ -699,6 +699,15 @@ void blk_cleanup_queue(struct request_queue *q)
 	queue_flag_set(QUEUE_FLAG_DEAD, q);
 	spin_unlock_irq(lock);
 
+	/*
+	 * make sure all in-progress dispatch are completed because
+	 * blk_freeze_queue() can only complete all requests, and
+	 * dispatch may still be in-progress since we dispatch requests
+	 * from more than one contexts
+	 */
+	if (q->mq_ops)
+		blk_mq_quiesce_queue(q);
+
 	/* for synchronous bio-based driver finish in-flight integrity i/o */
 	blk_flush_integrity();
 
@@ -812,9 +821,8 @@ int blk_queue_enter(struct request_queue *q, blk_mq_req_flags_t flags)
 
 	while (true) {
 		bool success = false;
-		int ret;
 
-		rcu_read_lock_sched();
+		rcu_read_lock();
 		if (percpu_ref_tryget_live(&q->q_usage_counter)) {
 			/*
 			 * The code that sets the PREEMPT_ONLY flag is
@@ -827,7 +835,7 @@ int blk_queue_enter(struct request_queue *q, blk_mq_req_flags_t flags)
 				percpu_ref_put(&q->q_usage_counter);
 			}
 		}
-		rcu_read_unlock_sched();
+		rcu_read_unlock();
 
 		if (success)
 			return 0;
@@ -844,14 +852,12 @@ int blk_queue_enter(struct request_queue *q, blk_mq_req_flags_t flags)
 		 */
 		smp_rmb();
 
-		ret = wait_event_interruptible(q->mq_freeze_wq,
-				(atomic_read(&q->mq_freeze_depth) == 0 &&
-				 (preempt || !blk_queue_preempt_only(q))) ||
-				blk_queue_dying(q));
+		wait_event(q->mq_freeze_wq,
+			   (atomic_read(&q->mq_freeze_depth) == 0 &&
+			    (preempt || !blk_queue_preempt_only(q))) ||
+			   blk_queue_dying(q));
 		if (blk_queue_dying(q))
 			return -ENODEV;
-		if (ret)
-			return ret;
 	}
 }
 
@@ -2392,7 +2398,7 @@ blk_qc_t submit_bio(struct bio *bio)
 		unsigned int count;
 
 		if (unlikely(bio_op(bio) == REQ_OP_WRITE_SAME))
-			count = queue_logical_block_size(bio->bi_disk->queue);
+			count = queue_logical_block_size(bio->bi_disk->queue) >> 9;
 		else
 			count = bio_sectors(bio);
 
@@ -3251,6 +3257,8 @@ void blk_rq_bio_prep(struct request_queue *q, struct request *rq,
 {
 	if (bio_has_data(bio))
 		rq->nr_phys_segments = bio_phys_segments(q, bio);
+	else if (bio_op(bio) == REQ_OP_DISCARD)
+		rq->nr_phys_segments = 1;
 
 	rq->__data_len = bio->bi_iter.bi_size;
 	rq->bio = rq->biotail = bio;

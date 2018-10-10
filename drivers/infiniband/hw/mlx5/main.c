@@ -270,6 +270,9 @@ static int mlx5_query_port_roce(struct ib_device *device, u8 port_num,
 	if (err)
 		return err;
 
+	props->active_width     = IB_WIDTH_4X;
+	props->active_speed     = IB_SPEED_QDR;
+
 	translate_eth_proto_oper(eth_prot_oper, &props->active_speed,
 				 &props->active_width);
 
@@ -682,7 +685,8 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 						MLX5_RX_HASH_SRC_PORT_TCP |
 						MLX5_RX_HASH_DST_PORT_TCP |
 						MLX5_RX_HASH_SRC_PORT_UDP |
-						MLX5_RX_HASH_DST_PORT_UDP;
+						MLX5_RX_HASH_DST_PORT_UDP |
+						MLX5_RX_HASH_INNER;
 			resp.response_length += sizeof(resp.rss_caps);
 		}
 	} else {

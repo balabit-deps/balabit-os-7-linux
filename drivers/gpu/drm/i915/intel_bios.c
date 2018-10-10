@@ -29,6 +29,7 @@
 #include <drm/drmP.h>
 #include <drm/i915_drm.h>
 #include "i915_drv.h"
+#include <linux/dmi.h>
 
 #define _INTEL_BIOS_PRIVATE
 #include "intel_vbt_defs.h"
@@ -1107,6 +1108,7 @@ static void sanitize_aux_ch(struct drm_i915_private *dev_priv,
 }
 
 static const u8 cnp_ddc_pin_map[] = {
+	[0] = 0, /* N/A */
 	[DDC_BUS_DDI_B] = GMBUS_PIN_1_BXT,
 	[DDC_BUS_DDI_C] = GMBUS_PIN_2_BXT,
 	[DDC_BUS_DDI_D] = GMBUS_PIN_4_CNP, /* sic */
@@ -1115,9 +1117,14 @@ static const u8 cnp_ddc_pin_map[] = {
 
 static u8 map_ddc_pin(struct drm_i915_private *dev_priv, u8 vbt_pin)
 {
-	if (HAS_PCH_CNP(dev_priv) &&
-	    vbt_pin > 0 && vbt_pin < ARRAY_SIZE(cnp_ddc_pin_map))
-		return cnp_ddc_pin_map[vbt_pin];
+	if (HAS_PCH_CNP(dev_priv)) {
+		if (vbt_pin < ARRAY_SIZE(cnp_ddc_pin_map)) {
+			return cnp_ddc_pin_map[vbt_pin];
+		} else {
+			DRM_DEBUG_KMS("Ignoring alternate pin: VBT claims DDC pin %d, which is not valid for this platform\n", vbt_pin);
+			return 0;
+		}
+	}
 
 	return vbt_pin;
 }
@@ -1167,7 +1174,6 @@ static void parse_ddi_port(struct drm_i915_private *dev_priv, enum port port,
 		return;
 
 	aux_channel = child->aux_channel;
-	ddc_pin = child->ddc_pin;
 
 	is_dvi = child->device_type & DEVICE_TYPE_TMDS_DVI_SIGNALING;
 	is_dp = child->device_type & DEVICE_TYPE_DISPLAYPORT_OUTPUT;
@@ -1214,9 +1220,15 @@ static void parse_ddi_port(struct drm_i915_private *dev_priv, enum port port,
 		DRM_DEBUG_KMS("Port %c is internal DP\n", port_name(port));
 
 	if (is_dvi) {
-		info->alternate_ddc_pin = map_ddc_pin(dev_priv, ddc_pin);
-
-		sanitize_ddc_pin(dev_priv, port);
+		ddc_pin = map_ddc_pin(dev_priv, child->ddc_pin);
+		if (intel_gmbus_is_valid_pin(dev_priv, ddc_pin)) {
+			info->alternate_ddc_pin = ddc_pin;
+			sanitize_ddc_pin(dev_priv, port);
+		} else {
+			DRM_DEBUG_KMS("Port %c has invalid DDC pin %d, "
+				      "sticking to defaults\n",
+				      port_name(port), ddc_pin);
+		}
 	}
 
 	if (is_dp) {
@@ -1488,6 +1500,22 @@ static const struct vbt_header *find_vbt(void __iomem *bios, size_t size)
 	return NULL;
 }
 
+#define DRM_DMI_PRODUCT_VERSION 0x6
+
+static void parse_product_info(struct drm_i915_private *dev_priv)
+{
+	const char *product_ver = dmi_get_system_info(DRM_DMI_PRODUCT_VERSION);
+	if (!product_ver)
+		return;
+
+	if (!strncmp(product_ver, "ThinkPad X1", 11)) {
+		DRM_DEBUG_KMS("dmi: %s, Bypassing TMDS_OE write\n", product_ver);
+		dev_priv->bypass_tmds_oe = true;
+	}
+
+	return;
+}
+
 /**
  * intel_bios_init - find VBT and initialize settings from the BIOS
  * @dev_priv: i915 device instance
@@ -1545,6 +1573,8 @@ void intel_bios_init(struct drm_i915_private *dev_priv)
 	/* Further processing on pre-parsed data */
 	parse_sdvo_device_mapping(dev_priv, bdb->version);
 	parse_ddi_ports(dev_priv, bdb->version);
+
+	parse_product_info(dev_priv);
 
 out:
 	if (!vbt) {

@@ -555,7 +555,6 @@ enum qeth_ip_types {
 enum qeth_cmd_buffer_state {
 	BUF_STATE_FREE,
 	BUF_STATE_LOCKED,
-	BUF_STATE_PROCESSED,
 };
 
 enum qeth_cq {
@@ -581,6 +580,11 @@ struct qeth_cmd_buffer {
 	void (*callback) (struct qeth_channel *, struct qeth_cmd_buffer *);
 };
 
+static inline struct qeth_ipa_cmd *__ipa_cmd(struct qeth_cmd_buffer *iob)
+{
+	return (struct qeth_ipa_cmd *)(iob->data + IPA_PDU_HEADER_SIZE);
+}
+
 /**
  * definition of a qeth channel, used for read and write
  */
@@ -594,7 +598,6 @@ struct qeth_channel {
 	struct qeth_cmd_buffer iob[QETH_CMD_BUFFER_NO];
 	atomic_t irq_pending;
 	int io_buf_no;
-	int buf_no;
 };
 
 /**
@@ -826,6 +829,17 @@ struct qeth_trap_id {
 /*some helper functions*/
 #define QETH_CARD_IFNAME(card) (((card)->dev)? (card)->dev->name : "")
 
+static inline void qeth_scrub_qdio_buffer(struct qdio_buffer *buf,
+					  unsigned int elements)
+{
+	unsigned int i;
+
+	for (i = 0; i < elements; i++)
+		memset(&buf->element[i], 0, sizeof(struct qdio_buffer_element));
+	buf->element[14].sflags = 0;
+	buf->element[15].sflags = 0;
+}
+
 /**
  * qeth_get_elements_for_range() -	find number of SBALEs to cover range.
  * @start:				Start of the address range.
@@ -836,7 +850,7 @@ struct qeth_trap_id {
  */
 static inline int qeth_get_elements_for_range(addr_t start, addr_t end)
 {
-	return PFN_UP(end - 1) - PFN_DOWN(start);
+	return PFN_UP(end) - PFN_DOWN(start);
 }
 
 static inline int qeth_get_micros(void)

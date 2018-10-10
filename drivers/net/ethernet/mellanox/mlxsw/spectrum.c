@@ -1453,6 +1453,7 @@ mlxsw_sp_port_vlan_create(struct mlxsw_sp_port *mlxsw_sp_port, u16 vid)
 	}
 
 	mlxsw_sp_port_vlan->mlxsw_sp_port = mlxsw_sp_port;
+	mlxsw_sp_port_vlan->ref_count = 1;
 	mlxsw_sp_port_vlan->vid = vid;
 	list_add(&mlxsw_sp_port_vlan->list, &mlxsw_sp_port->vlans_list);
 
@@ -1480,8 +1481,10 @@ mlxsw_sp_port_vlan_get(struct mlxsw_sp_port *mlxsw_sp_port, u16 vid)
 	struct mlxsw_sp_port_vlan *mlxsw_sp_port_vlan;
 
 	mlxsw_sp_port_vlan = mlxsw_sp_port_vlan_find_by_vid(mlxsw_sp_port, vid);
-	if (mlxsw_sp_port_vlan)
+	if (mlxsw_sp_port_vlan) {
+		mlxsw_sp_port_vlan->ref_count++;
 		return mlxsw_sp_port_vlan;
+	}
 
 	return mlxsw_sp_port_vlan_create(mlxsw_sp_port, vid);
 }
@@ -1489,6 +1492,9 @@ mlxsw_sp_port_vlan_get(struct mlxsw_sp_port *mlxsw_sp_port, u16 vid)
 void mlxsw_sp_port_vlan_put(struct mlxsw_sp_port_vlan *mlxsw_sp_port_vlan)
 {
 	struct mlxsw_sp_fid *fid = mlxsw_sp_port_vlan->fid;
+
+	if (--mlxsw_sp_port_vlan->ref_count != 0)
+		return;
 
 	if (mlxsw_sp_port_vlan->bridge_port)
 		mlxsw_sp_port_vlan_bridge_leave(mlxsw_sp_port_vlan);
@@ -4407,6 +4413,11 @@ static int mlxsw_sp_netdevice_port_upper_event(struct net_device *lower_dev,
 		if (netif_is_ovs_port(dev) && is_vlan_dev(upper_dev)) {
 			NL_SET_ERR_MSG(extack,
 				       "spectrum: Can not put a VLAN on an OVS port");
+			return -EINVAL;
+		}
+		if (is_vlan_dev(upper_dev) &&
+		    vlan_dev_vlan_id(upper_dev) == 1) {
+			NL_SET_ERR_MSG_MOD(extack, "Creating a VLAN device with VID 1 is unsupported: VLAN 1 carries untagged traffic");
 			return -EINVAL;
 		}
 		break;

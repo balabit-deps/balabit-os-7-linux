@@ -646,8 +646,8 @@ neg_exit:
 
 int smb3_validate_negotiate(const unsigned int xid, struct cifs_tcon *tcon)
 {
-	int rc = 0;
-	struct validate_negotiate_info_req vneg_inbuf;
+	int rc;
+	struct validate_negotiate_info_req *pneg_inbuf;
 	struct validate_negotiate_info_rsp *pneg_rsp = NULL;
 	u32 rsplen;
 	u32 inbuflen; /* max of 4 dialects */
@@ -672,69 +672,73 @@ int smb3_validate_negotiate(const unsigned int xid, struct cifs_tcon *tcon)
 	if (tcon->ses->session_flags & SMB2_SESSION_FLAG_IS_NULL)
 		cifs_dbg(VFS, "Unexpected null user (anonymous) auth flag sent by server\n");
 
-	vneg_inbuf.Capabilities =
+	pneg_inbuf = kmalloc(sizeof(*pneg_inbuf), GFP_NOFS);
+	if (!pneg_inbuf)
+		return -ENOMEM;
+
+	pneg_inbuf->Capabilities =
 			cpu_to_le32(tcon->ses->server->vals->req_capabilities);
-	memcpy(vneg_inbuf.Guid, tcon->ses->server->client_guid,
+	memcpy(pneg_inbuf->Guid, tcon->ses->server->client_guid,
 					SMB2_CLIENT_GUID_SIZE);
 
 	if (tcon->ses->sign)
-		vneg_inbuf.SecurityMode =
+		pneg_inbuf->SecurityMode =
 			cpu_to_le16(SMB2_NEGOTIATE_SIGNING_REQUIRED);
 	else if (global_secflags & CIFSSEC_MAY_SIGN)
-		vneg_inbuf.SecurityMode =
+		pneg_inbuf->SecurityMode =
 			cpu_to_le16(SMB2_NEGOTIATE_SIGNING_ENABLED);
 	else
-		vneg_inbuf.SecurityMode = 0;
+		pneg_inbuf->SecurityMode = 0;
 
 
 	if (strcmp(tcon->ses->server->vals->version_string,
 		SMB3ANY_VERSION_STRING) == 0) {
-		vneg_inbuf.Dialects[0] = cpu_to_le16(SMB30_PROT_ID);
-		vneg_inbuf.Dialects[1] = cpu_to_le16(SMB302_PROT_ID);
-		vneg_inbuf.DialectCount = cpu_to_le16(2);
+		pneg_inbuf->Dialects[0] = cpu_to_le16(SMB30_PROT_ID);
+		pneg_inbuf->Dialects[1] = cpu_to_le16(SMB302_PROT_ID);
+		pneg_inbuf->DialectCount = cpu_to_le16(2);
 		/* structure is big enough for 3 dialects, sending only 2 */
-		inbuflen = sizeof(struct validate_negotiate_info_req) - 2;
+		inbuflen = sizeof(*pneg_inbuf) -
+				sizeof(pneg_inbuf->Dialects[0]);
 	} else if (strcmp(tcon->ses->server->vals->version_string,
 		SMBDEFAULT_VERSION_STRING) == 0) {
-		vneg_inbuf.Dialects[0] = cpu_to_le16(SMB21_PROT_ID);
-		vneg_inbuf.Dialects[1] = cpu_to_le16(SMB30_PROT_ID);
-		vneg_inbuf.Dialects[2] = cpu_to_le16(SMB302_PROT_ID);
-		vneg_inbuf.DialectCount = cpu_to_le16(3);
+		pneg_inbuf->Dialects[0] = cpu_to_le16(SMB21_PROT_ID);
+		pneg_inbuf->Dialects[1] = cpu_to_le16(SMB30_PROT_ID);
+		pneg_inbuf->Dialects[2] = cpu_to_le16(SMB302_PROT_ID);
+		pneg_inbuf->DialectCount = cpu_to_le16(3);
 		/* structure is big enough for 3 dialects */
-		inbuflen = sizeof(struct validate_negotiate_info_req);
+		inbuflen = sizeof(*pneg_inbuf);
 	} else {
 		/* otherwise specific dialect was requested */
-		vneg_inbuf.Dialects[0] =
+		pneg_inbuf->Dialects[0] =
 			cpu_to_le16(tcon->ses->server->vals->protocol_id);
-		vneg_inbuf.DialectCount = cpu_to_le16(1);
+		pneg_inbuf->DialectCount = cpu_to_le16(1);
 		/* structure is big enough for 3 dialects, sending only 1 */
-		inbuflen = sizeof(struct validate_negotiate_info_req) - 4;
+		inbuflen = sizeof(*pneg_inbuf) -
+				sizeof(pneg_inbuf->Dialects[0]) * 2;
 	}
 
 	rc = SMB2_ioctl(xid, tcon, NO_FILE_ID, NO_FILE_ID,
 		FSCTL_VALIDATE_NEGOTIATE_INFO, true /* is_fsctl */,
-		false /* use_ipc */,
-		(char *)&vneg_inbuf, sizeof(struct validate_negotiate_info_req),
-		(char **)&pneg_rsp, &rsplen);
+		(char *)pneg_inbuf, inbuflen, (char **)&pneg_rsp, &rsplen);
 
 	if (rc != 0) {
 		cifs_dbg(VFS, "validate protocol negotiate failed: %d\n", rc);
-		return -EIO;
+		rc = -EIO;
+		goto out_free_inbuf;
 	}
 
-	if (rsplen != sizeof(struct validate_negotiate_info_rsp)) {
+	rc = -EIO;
+	if (rsplen != sizeof(*pneg_rsp)) {
 		cifs_dbg(VFS, "invalid protocol negotiate response size: %d\n",
 			 rsplen);
 
 		/* relax check since Mac returns max bufsize allowed on ioctl */
-		if ((rsplen > CIFSMaxBufSize)
-		     || (rsplen < sizeof(struct validate_negotiate_info_rsp)))
-			goto err_rsp_free;
+		if (rsplen > CIFSMaxBufSize || rsplen < sizeof(*pneg_rsp))
+			goto out_free_rsp;
 	}
 
 	/* check validate negotiate info response matches what we got earlier */
-	if (pneg_rsp->Dialect !=
-			cpu_to_le16(tcon->ses->server->vals->protocol_id))
+	if (pneg_rsp->Dialect != cpu_to_le16(tcon->ses->server->dialect))
 		goto vneg_out;
 
 	if (pneg_rsp->SecurityMode != cpu_to_le16(tcon->ses->server->sec_mode))
@@ -747,15 +751,17 @@ int smb3_validate_negotiate(const unsigned int xid, struct cifs_tcon *tcon)
 		goto vneg_out;
 
 	/* validate negotiate successful */
+	rc = 0;
 	cifs_dbg(FYI, "validate negotiate info successful\n");
-	kfree(pneg_rsp);
-	return 0;
+	goto out_free_rsp;
 
 vneg_out:
 	cifs_dbg(VFS, "protocol revalidation - security settings mismatch\n");
-err_rsp_free:
+out_free_rsp:
 	kfree(pneg_rsp);
-	return -EIO;
+out_free_inbuf:
+	kfree(pneg_inbuf);
+	return rc;
 }
 
 enum securityEnum
@@ -1183,6 +1189,7 @@ SMB2_sess_setup(const unsigned int xid, struct cifs_ses *ses,
 	sess_data->ses = ses;
 	sess_data->buf0_type = CIFS_NO_BUFFER;
 	sess_data->nls_cp = (struct nls_table *) nls_cp;
+	sess_data->previous_session = ses->Suid;
 
 	while (sess_data->func)
 		sess_data->func(sess_data);
@@ -1283,8 +1290,7 @@ SMB2_tcon(const unsigned int xid, struct cifs_ses *ses, const char *tree,
 	}
 
 	/* SMB2 TREE_CONNECT request must be called with TreeId == 0 */
-	if (tcon)
-		tcon->tid = 0;
+	tcon->tid = 0;
 
 	rc = small_smb2_init(SMB2_TREE_CONNECT, tcon, (void **) &req);
 	if (rc) {
@@ -1292,15 +1298,7 @@ SMB2_tcon(const unsigned int xid, struct cifs_ses *ses, const char *tree,
 		return rc;
 	}
 
-	if (tcon == NULL) {
-		if ((ses->session_flags & SMB2_SESSION_FLAG_ENCRYPT_DATA))
-			flags |= CIFS_TRANSFORM_REQ;
-
-		/* since no tcon, smb2_init can not do this, so do here */
-		req->hdr.sync_hdr.SessionId = ses->Suid;
-		if (ses->server->sign)
-			req->hdr.sync_hdr.Flags |= SMB2_FLAGS_SIGNED;
-	} else if (encryption_required(tcon))
+	if (encryption_required(tcon))
 		flags |= CIFS_TRANSFORM_REQ;
 
 	iov[0].iov_base = (char *)req;
@@ -1328,21 +1326,16 @@ SMB2_tcon(const unsigned int xid, struct cifs_ses *ses, const char *tree,
 		goto tcon_error_exit;
 	}
 
-	if (tcon == NULL) {
-		ses->ipc_tid = rsp->hdr.sync_hdr.TreeId;
-		goto tcon_exit;
-	}
-
 	switch (rsp->ShareType) {
 	case SMB2_SHARE_TYPE_DISK:
 		cifs_dbg(FYI, "connection to disk share\n");
 		break;
 	case SMB2_SHARE_TYPE_PIPE:
-		tcon->ipc = true;
+		tcon->pipe = true;
 		cifs_dbg(FYI, "connection to pipe share\n");
 		break;
 	case SMB2_SHARE_TYPE_PRINT:
-		tcon->ipc = true;
+		tcon->print = true;
 		cifs_dbg(FYI, "connection to printer\n");
 		break;
 	default:
@@ -1774,8 +1767,10 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
 		rc = alloc_path_with_tree_prefix(&copy_path, &copy_size,
 						 &name_len,
 						 tcon->treeName, path);
-		if (rc)
+		if (rc) {
+			cifs_small_buf_release(req);
 			return rc;
+		}
 		req->NameLength = cpu_to_le16(name_len * 2);
 		uni_path_len = copy_size;
 		path = copy_path;
@@ -1786,8 +1781,10 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
 		if (uni_path_len % 8 != 0) {
 			copy_size = roundup(uni_path_len, 8);
 			copy_path = kzalloc(copy_size, GFP_KERNEL);
-			if (!copy_path)
+			if (!copy_path) {
+				cifs_small_buf_release(req);
 				return -ENOMEM;
+			}
 			memcpy((char *)copy_path, (const char *)path,
 			       uni_path_len);
 			uni_path_len = copy_size;
@@ -1877,7 +1874,7 @@ creat_exit:
  */
 int
 SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon, u64 persistent_fid,
-	   u64 volatile_fid, u32 opcode, bool is_fsctl, bool use_ipc,
+	   u64 volatile_fid, u32 opcode, bool is_fsctl,
 	   char *in_data, u32 indatalen,
 	   char **out_data, u32 *plen /* returned data len */)
 {
@@ -1913,16 +1910,6 @@ SMB2_ioctl(const unsigned int xid, struct cifs_tcon *tcon, u64 persistent_fid,
 	if (rc)
 		return rc;
 
-	if (use_ipc) {
-		if (ses->ipc_tid == 0) {
-			cifs_small_buf_release(req);
-			return -ENOTCONN;
-		}
-
-		cifs_dbg(FYI, "replacing tid 0x%x with IPC tid 0x%x\n",
-			 req->hdr.sync_hdr.TreeId, ses->ipc_tid);
-		req->hdr.sync_hdr.TreeId = ses->ipc_tid;
-	}
 	if (encryption_required(tcon))
 		flags |= CIFS_TRANSFORM_REQ;
 
@@ -2052,7 +2039,6 @@ SMB2_set_compression(const unsigned int xid, struct cifs_tcon *tcon,
 
 	rc = SMB2_ioctl(xid, tcon, persistent_fid, volatile_fid,
 			FSCTL_SET_COMPRESSION, true /* is_fsctl */,
-			false /* use_ipc */,
 			(char *)&fsctl_input /* data input */,
 			2 /* in data len */, &ret_data /* out data */, NULL);
 
@@ -2337,6 +2323,10 @@ void smb2_reconnect_server(struct work_struct *work)
 				list_add_tail(&tcon->rlist, &tmp_list);
 				tcon_exist = true;
 			}
+		}
+		if (ses->tcon_ipc && ses->tcon_ipc->need_reconnect) {
+			list_add_tail(&ses->tcon_ipc->rlist, &tmp_list);
+			tcon_exist = true;
 		}
 	}
 	/*

@@ -1918,6 +1918,8 @@ static irqreturn_t e1000_msix_other(int __always_unused irq, void *data)
 	bool enable = true;
 
 	icr = er32(ICR);
+	ew32(ICR, E1000_ICR_OTHER);
+
 	if (icr & E1000_ICR_RXO) {
 		ew32(ICR, E1000_ICR_RXO);
 		enable = false;
@@ -2040,7 +2042,6 @@ static void e1000_configure_msix(struct e1000_adapter *adapter)
 		       hw->hw_addr + E1000_EITR_82574(vector));
 	else
 		writel(1, hw->hw_addr + E1000_EITR_82574(vector));
-	adapter->eiac_mask |= E1000_IMS_OTHER;
 
 	/* Cause Tx interrupts on every write back */
 	ivar |= BIT(31);
@@ -2265,7 +2266,7 @@ static void e1000_irq_enable(struct e1000_adapter *adapter)
 
 	if (adapter->msix_entries) {
 		ew32(EIAC_82574, adapter->eiac_mask & E1000_EIAC_MASK_82574);
-		ew32(IMS, adapter->eiac_mask | E1000_IMS_LSC);
+		ew32(IMS, adapter->eiac_mask | E1000_IMS_OTHER | E1000_IMS_LSC);
 	} else if (hw->mac.type >= e1000_pch_lpt) {
 		ew32(IMS, IMS_ENABLE_MASK | E1000_IMS_ECCER);
 	} else {
@@ -2333,8 +2334,8 @@ static int e1000_alloc_ring_dma(struct e1000_adapter *adapter,
 {
 	struct pci_dev *pdev = adapter->pdev;
 
-	ring->desc = dma_alloc_coherent(&pdev->dev, ring->size, &ring->dma,
-					GFP_KERNEL);
+	ring->desc = dma_zalloc_coherent(&pdev->dev, ring->size, &ring->dma,
+					 GFP_KERNEL);
 	if (!ring->desc)
 		return -ENOMEM;
 
@@ -3236,7 +3237,7 @@ static void e1000_configure_rx(struct e1000_adapter *adapter)
 	if (!(adapter->flags2 & FLAG2_NO_DISABLE_RX))
 		ew32(RCTL, rctl & ~E1000_RCTL_EN);
 	e1e_flush();
-	usleep_range(10000, 20000);
+	usleep_range(10000, 11000);
 
 	if (adapter->flags2 & FLAG2_DMA_BURST) {
 		/* set the writeback threshold (only takes effect if the RDTR
@@ -4302,7 +4303,7 @@ void e1000e_down(struct e1000_adapter *adapter, bool reset)
 
 	/* flush both disables and wait for them to finish */
 	e1e_flush();
-	usleep_range(10000, 20000);
+	usleep_range(10000, 11000);
 
 	e1000_irq_disable(adapter);
 
@@ -4340,7 +4341,7 @@ void e1000e_reinit_locked(struct e1000_adapter *adapter)
 {
 	might_sleep();
 	while (test_and_set_bit(__E1000_RESETTING, &adapter->state))
-		usleep_range(1000, 2000);
+		usleep_range(1000, 1100);
 	e1000e_down(adapter, true);
 	e1000e_up(adapter);
 	clear_bit(__E1000_RESETTING, &adapter->state);
@@ -4715,7 +4716,7 @@ int e1000e_close(struct net_device *netdev)
 	int count = E1000_CHECK_RESET_COUNT;
 
 	while (test_bit(__E1000_RESETTING, &adapter->state) && count--)
-		usleep_range(10000, 20000);
+		usleep_range(10000, 11000);
 
 	WARN_ON(test_bit(__E1000_RESETTING, &adapter->state));
 
@@ -6033,7 +6034,7 @@ static int e1000_change_mtu(struct net_device *netdev, int new_mtu)
 	}
 
 	while (test_and_set_bit(__E1000_RESETTING, &adapter->state))
-		usleep_range(1000, 2000);
+		usleep_range(1000, 1100);
 	/* e1000e_down -> e1000e_reset dependent on max_frame_size & mtu */
 	adapter->max_frame_size = max_frame;
 	e_info("changing MTU from %d to %d\n", netdev->mtu, new_mtu);
@@ -6313,7 +6314,7 @@ static int e1000e_pm_freeze(struct device *dev)
 		int count = E1000_CHECK_RESET_COUNT;
 
 		while (test_bit(__E1000_RESETTING, &adapter->state) && count--)
-			usleep_range(10000, 20000);
+			usleep_range(10000, 11000);
 
 		WARN_ON(test_bit(__E1000_RESETTING, &adapter->state));
 
@@ -6728,7 +6729,7 @@ static int e1000e_pm_runtime_suspend(struct device *dev)
 		int count = E1000_CHECK_RESET_COUNT;
 
 		while (test_bit(__E1000_RESETTING, &adapter->state) && count--)
-			usleep_range(10000, 20000);
+			usleep_range(10000, 11000);
 
 		WARN_ON(test_bit(__E1000_RESETTING, &adapter->state));
 

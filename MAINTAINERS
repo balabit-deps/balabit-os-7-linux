@@ -2486,6 +2486,19 @@ F:	include/linux/audit.h
 F:	include/uapi/linux/audit.h
 F:	kernel/audit*
 
+AUFS (advanced multi layered unification filesystem) FILESYSTEM
+M:	"J. R. Okajima" <hooanon05g@gmail.com>
+L:	linux-unionfs@vger.kernel.org
+L:	aufs-users@lists.sourceforge.net (members only)
+W:	http://aufs.sourceforge.net
+T:	git://github.com/sfjro/aufs4-linux.git
+S:	Supported
+F:	Documentation/filesystems/aufs/
+F:	Documentation/ABI/testing/debugfs-aufs
+F:	Documentation/ABI/testing/sysfs-aufs
+F:	fs/aufs/
+F:	include/uapi/linux/aufs_type.h
+
 AUXILIARY DISPLAY DRIVERS
 M:	Miguel Ojeda Sandonis <miguel.ojeda.sandonis@gmail.com>
 W:	http://miguelojeda.es/auxdisplay.htm
@@ -6340,6 +6353,13 @@ W:	http://www.hisilicon.com
 S:	Maintained
 F:	drivers/net/ethernet/hisilicon/hns3/
 
+HISILICON LPC BUS DRIVER
+M:	john.garry@huawei.com
+W:	http://www.hisilicon.com
+S:	Maintained
+F:	drivers/bus/hisi_lpc.c
+F:	Documentation/devicetree/bindings/arm/hisilicon/hisilicon-low-pin-count.txt
+
 HISILICON NETWORK SUBSYSTEM DRIVER
 M:	Yisen Zhuang <yisen.zhuang@huawei.com>
 M:	Salil Mehta <salil.mehta@huawei.com>
@@ -9107,6 +9127,7 @@ MIPS GENERIC PLATFORM
 M:	Paul Burton <paul.burton@mips.com>
 L:	linux-mips@linux-mips.org
 S:	Supported
+F:	Documentation/devicetree/bindings/power/mti,mips-cpc.txt
 F:	arch/mips/generic/
 F:	arch/mips/tools/generic-board-config.sh
 
@@ -9815,6 +9836,18 @@ OBJTOOL
 M:	Josh Poimboeuf <jpoimboe@redhat.com>
 S:	Supported
 F:	tools/objtool/
+
+OCXL (Open Coherent Accelerator Processor Interface OpenCAPI) DRIVER
+M:	Frederic Barrat <fbarrat@linux.vnet.ibm.com>
+M:	Andrew Donnellan <andrew.donnellan@au1.ibm.com>
+L:	linuxppc-dev@lists.ozlabs.org
+S:	Supported
+F:	arch/powerpc/platforms/powernv/ocxl.c
+F:	arch/powerpc/include/asm/pnv-ocxl.h
+F:	drivers/misc/ocxl/
+F:	include/misc/ocxl*
+F:	include/uapi/misc/ocxl.h
+F:	Documentation/accelerators/ocxl.txt
 
 OMAP AUDIO SUPPORT
 M:	Peter Ujfalusi <peter.ujfalusi@ti.com>
@@ -11301,6 +11334,13 @@ W:	http://wireless.kernel.org/en/users/Drivers/ath9k
 S:	Supported
 F:	drivers/net/wireless/ath/ath9k/
 
+QUALCOMM CAMERA CONTROL INTERFACE DRIVER
+M:	Todor Tomov <todor.tomov@linaro.org>
+L:	linux-i2c@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/i2c/i2c-qcom-cci.txt
+F:	drivers/i2c/busses/i2c-qcom-cci.c
+
 QUALCOMM CAMERA SUBSYSTEM DRIVER
 M:	Todor Tomov <todor.tomov@linaro.org>
 L:	linux-media@vger.kernel.org
@@ -12613,6 +12653,15 @@ M:	Ismael Luceno <ismael@iodev.co.uk>
 L:	linux-media@vger.kernel.org
 S:	Supported
 F:	drivers/media/pci/solo6x10/
+
+SOFTWARE DELEGATED EXCEPTION INTERFACE (SDEI)
+M:	James Morse <james.morse@arm.com>
+L:	linux-arm-kernel@lists.infradead.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/arm/firmware/sdei.txt
+F:	drivers/firmware/arm_sdei.c
+F:	include/linux/sdei.h
+F:	include/uapi/linux/sdei.h
 
 SOFTWARE RAID (Multiple Disks) SUPPORT
 M:	Shaohua Li <shli@kernel.org>

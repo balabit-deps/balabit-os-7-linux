@@ -3523,7 +3523,7 @@ retry:
 		iomap->flags |= IOMAP_F_DIRTY;
 	iomap->bdev = inode->i_sb->s_bdev;
 	iomap->dax_dev = sbi->s_daxdev;
-	iomap->offset = first_block << blkbits;
+	iomap->offset = (u64)first_block << blkbits;
 	iomap->length = (u64)map.m_len << blkbits;
 
 	if (ret == 0) {
@@ -3657,7 +3657,6 @@ static ssize_t ext4_direct_IO_write(struct kiocb *iocb, struct iov_iter *iter)
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
-	struct ext4_inode_info *ei = EXT4_I(inode);
 	ssize_t ret;
 	loff_t offset = iocb->ki_pos;
 	size_t count = iov_iter_count(iter);
@@ -3681,7 +3680,7 @@ static ssize_t ext4_direct_IO_write(struct kiocb *iocb, struct iov_iter *iter)
 			goto out;
 		}
 		orphan = 1;
-		ei->i_disksize = inode->i_size;
+		ext4_update_i_disksize(inode, inode->i_size);
 		ext4_journal_stop(handle);
 	}
 
@@ -3767,10 +3766,18 @@ static ssize_t ext4_direct_IO_write(struct kiocb *iocb, struct iov_iter *iter)
 		/* Credits for sb + inode write */
 		handle = ext4_journal_start(inode, EXT4_HT_INODE, 2);
 		if (IS_ERR(handle)) {
-			/* This is really bad luck. We've written the data
-			 * but cannot extend i_size. Bail out and pretend
-			 * the write failed... */
-			ret = PTR_ERR(handle);
+			/*
+			 * We wrote the data but cannot extend
+			 * i_size. Bail out. In async io case, we do
+			 * not return error here because we have
+			 * already submmitted the corresponding
+			 * bio. Returning error here makes the caller
+			 * think that this IO is done and failed
+			 * resulting in race with bio's completion
+			 * handler.
+			 */
+			if (!ret)
+				ret = PTR_ERR(handle);
 			if (inode->i_nlink)
 				ext4_orphan_del(NULL, inode);
 
@@ -3781,7 +3788,7 @@ static ssize_t ext4_direct_IO_write(struct kiocb *iocb, struct iov_iter *iter)
 		if (ret > 0) {
 			loff_t end = offset + ret;
 			if (end > inode->i_size) {
-				ei->i_disksize = end;
+				ext4_update_i_disksize(inode, end);
 				i_size_write(inode, end);
 				/*
 				 * We're going to return a positive `ret'
@@ -4737,6 +4744,12 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 		goto bad_inode;
 	raw_inode = ext4_raw_inode(&iloc);
 
+	if ((ino == EXT4_ROOT_INO) && (raw_inode->i_links_count == 0)) {
+		EXT4_ERROR_INODE(inode, "root inode unallocated");
+		ret = -EFSCORRUPTED;
+		goto bad_inode;
+	}
+
 	if (EXT4_INODE_SIZE(inode->i_sb) > EXT4_GOOD_OLD_INODE_SIZE) {
 		ei->i_extra_isize = le16_to_cpu(raw_inode->i_extra_isize);
 		if (EXT4_GOOD_OLD_INODE_SIZE + ei->i_extra_isize >
@@ -4786,7 +4799,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 	}
 	i_uid_write(inode, i_uid);
 	i_gid_write(inode, i_gid);
-	ei->i_projid = make_kprojid(&init_user_ns, i_projid);
+	ei->i_projid = make_kprojid(sb->s_user_ns, i_projid);
 	set_nlink(inode, le16_to_cpu(raw_inode->i_links_count));
 
 	ext4_clear_state_flags(ei);	/* Only relevant on 32-bit archs */
@@ -5104,7 +5117,7 @@ static int ext4_do_update_inode(handle_t *handle,
 	raw_inode->i_mode = cpu_to_le16(inode->i_mode);
 	i_uid = i_uid_read(inode);
 	i_gid = i_gid_read(inode);
-	i_projid = from_kprojid(&init_user_ns, ei->i_projid);
+	i_projid = from_kprojid(sb->s_user_ns, ei->i_projid);
 	if (!(test_opt(inode->i_sb, NO_UID32))) {
 		raw_inode->i_uid_low = cpu_to_le16(low_16_bits(i_uid));
 		raw_inode->i_gid_low = cpu_to_le16(low_16_bits(i_gid));
@@ -5183,12 +5196,14 @@ static int ext4_do_update_inode(handle_t *handle,
 		}
 	}
 
-	BUG_ON(!ext4_has_feature_project(inode->i_sb) &&
-	       i_projid != EXT4_DEF_PROJID);
+	if (i_projid != (projid_t)-1) {
+		BUG_ON(!ext4_has_feature_project(inode->i_sb) &&
+		       i_projid != EXT4_DEF_PROJID);
 
-	if (EXT4_INODE_SIZE(inode->i_sb) > EXT4_GOOD_OLD_INODE_SIZE &&
-	    EXT4_FITS_IN_INODE(raw_inode, ei, i_projid))
-		raw_inode->i_projid = cpu_to_le32(i_projid);
+		if (EXT4_INODE_SIZE(inode->i_sb) > EXT4_GOOD_OLD_INODE_SIZE &&
+		    EXT4_FITS_IN_INODE(raw_inode, ei, i_projid))
+			raw_inode->i_projid = cpu_to_le32(i_projid);
+	}
 
 	ext4_inode_csum_set(inode, raw_inode, ei);
 	spin_unlock(&ei->i_raw_lock);

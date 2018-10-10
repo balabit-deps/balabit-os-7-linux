@@ -253,13 +253,14 @@ static struct net_device *__ip_tunnel_create(struct net *net,
 	struct net_device *dev;
 	char name[IFNAMSIZ];
 
-	if (parms->name[0])
-		strlcpy(name, parms->name, IFNAMSIZ);
-	else {
-		if (strlen(ops->kind) > (IFNAMSIZ - 3)) {
-			err = -E2BIG;
+	err = -E2BIG;
+	if (parms->name[0]) {
+		if (!dev_valid_name(parms->name))
 			goto failed;
-		}
+		strlcpy(name, parms->name, IFNAMSIZ);
+	} else {
+		if (strlen(ops->kind) > (IFNAMSIZ - 3))
+			goto failed;
 		strlcpy(name, ops->kind, IFNAMSIZ);
 		strncat(name, "%d", 2);
 	}
@@ -1108,8 +1109,14 @@ int ip_tunnel_newlink(struct net_device *dev, struct nlattr *tb[],
 		eth_hw_addr_random(dev);
 
 	mtu = ip_tunnel_bind_dev(dev);
-	if (!tb[IFLA_MTU])
+	if (tb[IFLA_MTU]) {
+		unsigned int max = 0xfff8 - dev->hard_header_len - nt->hlen;
+
+		dev->mtu = clamp(dev->mtu, (unsigned int)ETH_MIN_MTU,
+				 (unsigned int)(max - sizeof(struct iphdr)));
+	} else {
 		dev->mtu = mtu;
+	}
 
 	ip_tunnel_add(itn, nt);
 out:
@@ -1126,7 +1133,7 @@ int ip_tunnel_changelink(struct net_device *dev, struct nlattr *tb[],
 	struct ip_tunnel_net *itn = net_generic(net, tunnel->ip_tnl_net_id);
 
 	if (dev == itn->fb_tunnel_dev)
-		return -EINVAL;
+		return fan_has_map(&tunnel->fan) ? 0 : -EINVAL;
 
 	t = ip_tunnel_find(itn, p, dev->type);
 

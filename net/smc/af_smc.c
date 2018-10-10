@@ -1138,13 +1138,15 @@ static unsigned int smc_poll(struct file *file, struct socket *sock,
 	if ((sk->sk_state == SMC_INIT) || smc->use_fallback) {
 		/* delegate to CLC child sock */
 		mask = smc->clcsock->ops->poll(file, smc->clcsock, wait);
-		/* if non-blocking connect finished ... */
 		lock_sock(sk);
-		if ((sk->sk_state == SMC_INIT) && (mask & POLLOUT)) {
-			sk->sk_err = smc->clcsock->sk->sk_err;
-			if (sk->sk_err) {
-				mask |= POLLERR;
-			} else {
+		sk->sk_err = smc->clcsock->sk->sk_err;
+		if (sk->sk_err) {
+			mask |= POLLERR;
+		} else {
+			/* if non-blocking connect finished ... */
+			if (sk->sk_state == SMC_INIT &&
+			    mask & POLLOUT &&
+			    smc->clcsock->sk->sk_state != TCP_CLOSE) {
 				rc = smc_connect_rdma(smc);
 				if (rc < 0)
 					mask |= POLLERR;
@@ -1221,14 +1223,12 @@ static int smc_shutdown(struct socket *sock, int how)
 		rc = smc_close_shutdown_write(smc);
 		break;
 	case SHUT_RD:
-		if (sk->sk_state == SMC_LISTEN)
-			rc = smc_close_active(smc);
-		else
-			rc = 0;
-			/* nothing more to do because peer is not involved */
+		rc = 0;
+		/* nothing more to do because peer is not involved */
 		break;
 	}
-	rc1 = kernel_sock_shutdown(smc->clcsock, how);
+	if (smc->clcsock)
+		rc1 = kernel_sock_shutdown(smc->clcsock, how);
 	/* map sock_shutdown_cmd constants to sk_shutdown value range */
 	sk->sk_shutdown |= how + 1;
 
@@ -1284,8 +1284,11 @@ static ssize_t smc_sendpage(struct socket *sock, struct page *page,
 
 	smc = smc_sk(sk);
 	lock_sock(sk);
-	if (sk->sk_state != SMC_ACTIVE)
+	if (sk->sk_state != SMC_ACTIVE) {
+		release_sock(sk);
 		goto out;
+	}
+	release_sock(sk);
 	if (smc->use_fallback)
 		rc = kernel_sendpage(smc->clcsock, page, offset,
 				     size, flags);
@@ -1293,7 +1296,6 @@ static ssize_t smc_sendpage(struct socket *sock, struct page *page,
 		rc = sock_no_sendpage(sock, page, offset, size, flags);
 
 out:
-	release_sock(sk);
 	return rc;
 }
 
@@ -1369,8 +1371,10 @@ static int smc_create(struct net *net, struct socket *sock, int protocol,
 	smc->use_fallback = false; /* assume rdma capability first */
 	rc = sock_create_kern(net, PF_INET, SOCK_STREAM,
 			      IPPROTO_TCP, &smc->clcsock);
-	if (rc)
+	if (rc) {
 		sk_common_release(sk);
+		goto out;
+	}
 	smc->sk.sk_sndbuf = max(smc->clcsock->sk->sk_sndbuf, SMC_BUF_MIN_SIZE);
 	smc->sk.sk_rcvbuf = max(smc->clcsock->sk->sk_rcvbuf, SMC_BUF_MIN_SIZE);
 

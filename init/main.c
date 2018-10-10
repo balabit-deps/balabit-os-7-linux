@@ -801,16 +801,16 @@ __setup("initcall_blacklist=", initcall_blacklist);
 
 static int __init_or_module do_one_initcall_debug(initcall_t fn)
 {
-	ktime_t calltime, delta, rettime;
+	unsigned long long calltime, delta, rettime;
 	unsigned long long duration;
 	int ret;
 
 	printk(KERN_DEBUG "calling  %pF @ %i\n", fn, task_pid_nr(current));
-	calltime = ktime_get();
+	calltime = local_clock();
 	ret = fn();
-	rettime = ktime_get();
-	delta = ktime_sub(rettime, calltime);
-	duration = (unsigned long long) ktime_to_ns(delta) >> 10;
+	rettime = local_clock();
+	delta = rettime - calltime;
+	duration = delta >> 10;
 	printk(KERN_DEBUG "initcall %pF returned %d after %lld usecs\n",
 		 fn, ret, duration);
 
@@ -980,6 +980,13 @@ __setup("rodata=", set_debug_rodata);
 static void mark_readonly(void)
 {
 	if (rodata_enabled) {
+		/*
+		 * load_module() results in W+X mappings, which are cleaned up
+		 * with call_rcu_sched().  Let's make sure that queued work is
+		 * flushed so that we don't hit false positives looking for
+		 * insecure pages which are W+X.
+		 */
+		rcu_barrier_sched();
 		mark_rodata_ro();
 		rodata_test();
 	} else

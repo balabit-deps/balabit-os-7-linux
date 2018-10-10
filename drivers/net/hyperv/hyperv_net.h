@@ -192,7 +192,7 @@ struct netvsc_device *netvsc_device_add(struct hv_device *device,
 					const struct netvsc_device_info *info);
 int netvsc_alloc_recv_comp_ring(struct netvsc_device *net_device, u32 q_idx);
 void netvsc_device_remove(struct hv_device *device);
-int netvsc_send(struct net_device_context *ndc,
+int netvsc_send(struct net_device *net,
 		struct hv_netvsc_packet *packet,
 		struct rndis_message *rndis_msg,
 		struct hv_page_buffer *page_buffer,
@@ -208,7 +208,6 @@ void netvsc_channel_cb(void *context);
 int netvsc_poll(struct napi_struct *napi, int budget);
 
 void rndis_set_subchannel(struct work_struct *w);
-bool rndis_filter_opened(const struct netvsc_device *nvdev);
 int rndis_filter_open(struct netvsc_device *nvdev);
 int rndis_filter_close(struct netvsc_device *nvdev);
 struct netvsc_device *rndis_filter_device_add(struct hv_device *dev,
@@ -635,13 +634,26 @@ struct nvsp_message {
 #define NETVSC_MTU 65535
 #define NETVSC_MTU_MIN ETH_MIN_MTU
 
-#define NETVSC_RECEIVE_BUFFER_SIZE		(1024*1024*16)	/* 16MB */
-#define NETVSC_RECEIVE_BUFFER_SIZE_LEGACY	(1024*1024*15)  /* 15MB */
-#define NETVSC_SEND_BUFFER_SIZE			(1024 * 1024 * 15)   /* 15MB */
+/* Max buffer sizes allowed by a host */
+#define NETVSC_RECEIVE_BUFFER_SIZE		(1024 * 1024 * 31) /* 31MB */
+#define NETVSC_RECEIVE_BUFFER_SIZE_LEGACY	(1024 * 1024 * 15) /* 15MB */
+#define NETVSC_RECEIVE_BUFFER_DEFAULT		(1024 * 1024 * 16)
+
+#define NETVSC_SEND_BUFFER_SIZE			(1024 * 1024 * 15)  /* 15MB */
+#define NETVSC_SEND_BUFFER_DEFAULT		(1024 * 1024)
+
 #define NETVSC_INVALID_INDEX			-1
 
 #define NETVSC_SEND_SECTION_SIZE		6144
 #define NETVSC_RECV_SECTION_SIZE		1728
+
+/* Default size of TX buf: 1MB, RX buf: 16MB */
+#define NETVSC_MIN_TX_SECTIONS	10
+#define NETVSC_DEFAULT_TX	(NETVSC_SEND_BUFFER_DEFAULT \
+				 / NETVSC_SEND_SECTION_SIZE)
+#define NETVSC_MIN_RX_SECTIONS	10
+#define NETVSC_DEFAULT_RX	(NETVSC_RECEIVE_BUFFER_DEFAULT \
+				 / NETVSC_RECV_SECTION_SIZE)
 
 #define NETVSC_RECEIVE_BUFFER_ID		0xcafe
 #define NETVSC_SEND_BUFFER_ID			0

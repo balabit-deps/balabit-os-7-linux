@@ -17,6 +17,7 @@
 #include <linux/tracepoint.h>
 #include <linux/cpumask.h>
 #include <linux/irq_work.h>
+#include <linux/irq.h>
 
 #include <linux/kvm.h>
 #include <linux/kvm_para.h>
@@ -86,7 +87,7 @@
 			  | X86_CR4_PGE | X86_CR4_PCE | X86_CR4_OSFXSR | X86_CR4_PCIDE \
 			  | X86_CR4_OSXSAVE | X86_CR4_SMEP | X86_CR4_FSGSBASE \
 			  | X86_CR4_OSXMMEXCPT | X86_CR4_LA57 | X86_CR4_VMXE \
-			  | X86_CR4_SMAP | X86_CR4_PKE))
+			  | X86_CR4_SMAP | X86_CR4_PKE | X86_CR4_UMIP))
 
 #define CR8_RESERVED_BITS (~(unsigned long)X86_CR8_TPR)
 
@@ -706,6 +707,9 @@ struct kvm_vcpu_arch {
 
 	/* be preempted when it's in kernel-mode(cpl=0) */
 	bool preempted_in_kernel;
+
+	/* Flush the L1 Data cache for L1TF mitigation on VMENTER */
+	bool l1tf_flush_l1d;
 };
 
 struct kvm_lpage_info {
@@ -875,6 +879,7 @@ struct kvm_vcpu_stat {
 	u64 signal_exits;
 	u64 irq_window_exits;
 	u64 nmi_window_exits;
+	u64 l1d_flush;
 	u64 halt_exits;
 	u64 halt_successful_poll;
 	u64 halt_attempted_poll;
@@ -921,7 +926,7 @@ struct kvm_x86_ops {
 	int (*hardware_setup)(void);               /* __init */
 	void (*hardware_unsetup)(void);            /* __exit */
 	bool (*cpu_has_accelerated_tpr)(void);
-	bool (*cpu_has_high_real_mode_segbase)(void);
+	bool (*has_emulated_msr)(int index);
 	void (*cpuid_update)(struct kvm_vcpu *vcpu);
 
 	int (*vm_init)(struct kvm *kvm);
@@ -1007,6 +1012,7 @@ struct kvm_x86_ops {
 
 	bool (*has_wbinvd_exit)(void);
 
+	u64 (*read_l1_tsc_offset)(struct kvm_vcpu *vcpu);
 	void (*write_tsc_offset)(struct kvm_vcpu *vcpu, u64 offset);
 
 	void (*get_exit_info)(struct kvm_vcpu *vcpu, u64 *info1, u64 *info2);
@@ -1079,6 +1085,8 @@ struct kvm_x86_ops {
 	int (*pre_enter_smm)(struct kvm_vcpu *vcpu, char *smstate);
 	int (*pre_leave_smm)(struct kvm_vcpu *vcpu, u64 smbase);
 	int (*enable_smi_window)(struct kvm_vcpu *vcpu);
+
+	int (*get_msr_feature)(struct kvm_msr_entry *entry);
 };
 
 struct kvm_arch_async_pf {
@@ -1384,6 +1392,7 @@ int kvm_cpu_get_interrupt(struct kvm_vcpu *v);
 void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event);
 void kvm_vcpu_reload_apic_access_page(struct kvm_vcpu *vcpu);
 
+u64 kvm_get_arch_capabilities(void);
 void kvm_define_shared_msr(unsigned index, u32 msr);
 int kvm_set_shared_msr(unsigned index, u64 val, u64 mask);
 

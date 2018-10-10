@@ -29,6 +29,14 @@
 #include <linux/slab.h>
 #include <linux/cpuhotplug.h>
 
+#ifndef PKG_ABI
+/*
+ * Preserve the ability to 'make deb-pkg' since PKG_ABI is provided
+ * by the Ubuntu build rules.
+ */
+#define PKG_ABI 0
+#endif
+
 #ifdef CONFIG_HYPERV_TSCPAGE
 
 static struct ms_hyperv_tsc_page *tsc_pg;
@@ -110,10 +118,17 @@ static int hv_cpu_init(unsigned int cpu)
  */
 void hyperv_init(void)
 {
-	u64 guest_id;
+	u64 guest_id, required_msrs;
 	union hv_x64_msr_hypercall_contents hypercall_msr;
 
 	if (x86_hyper_type != X86_HYPER_MS_HYPERV)
+		return;
+
+	/* Absolutely required MSRs */
+	required_msrs = HV_X64_MSR_HYPERCALL_AVAILABLE |
+		HV_X64_MSR_VP_INDEX_AVAILABLE;
+
+	if ((ms_hyperv.features & required_msrs) != required_msrs)
 		return;
 
 	/* Allocate percpu VP index */
@@ -131,7 +146,7 @@ void hyperv_init(void)
 	 * 1. Register the guest ID
 	 * 2. Enable the hypercall and register the hypercall page
 	 */
-	guest_id = generate_guest_id(0, LINUX_VERSION_CODE, 0);
+	guest_id = generate_guest_id(0x80 /*Canonical*/, LINUX_VERSION_CODE, PKG_ABI);
 	wrmsrl(HV_X64_MSR_GUEST_OS_ID, guest_id);
 
 	hv_hypercall_pg  = __vmalloc(PAGE_SIZE, GFP_KERNEL, PAGE_KERNEL_RX);

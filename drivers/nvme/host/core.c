@@ -79,6 +79,7 @@ static struct class *nvme_subsys_class;
 
 static void nvme_ns_remove(struct nvme_ns *ns);
 static int nvme_revalidate_disk(struct gendisk *disk);
+static void nvme_put_subsystem(struct nvme_subsystem *subsys);
 
 static __le32 nvme_get_log_dw10(u8 lid, size_t size)
 {
@@ -306,6 +307,7 @@ static void nvme_free_ns_head(struct kref *ref)
 	ida_simple_remove(&head->subsys->ns_ida, head->instance);
 	list_del_init(&head->entry);
 	cleanup_srcu_struct(&head->srcu);
+	nvme_put_subsystem(head->subsys);
 	kfree(head);
 }
 
@@ -707,6 +709,7 @@ static int nvme_submit_user_cmd(struct request_queue *q,
 				ret = PTR_ERR(meta);
 				goto out_unmap;
 			}
+			req->cmd_flags |= REQ_INTEGRITY;
 		}
 	}
 
@@ -1372,8 +1375,8 @@ static void __nvme_revalidate_disk(struct gendisk *disk, struct nvme_id_ns *id)
 	if (ns->lba_shift == 0)
 		ns->lba_shift = 9;
 	ns->noiob = le16_to_cpu(id->noiob);
-	ns->ext = ns->ms && (id->flbas & NVME_NS_FLBAS_META_EXT);
 	ns->ms = le16_to_cpu(id->lbaf[id->flbas & NVME_NS_FLBAS_LBA_MASK].ms);
+	ns->ext = ns->ms && (id->flbas & NVME_NS_FLBAS_META_EXT);
 	/* the PI implementation requires metadata equal t10 pi tuple size */
 	if (ns->ms == sizeof(struct t10_pi_tuple))
 		ns->pi_type = id->dps & NVME_NS_DPS_PI_MASK;
@@ -2052,6 +2055,22 @@ static const struct attribute_group *nvme_subsys_attrs_groups[] = {
 	NULL,
 };
 
+static int nvme_active_ctrls(struct nvme_subsystem *subsys)
+{
+	int count = 0;
+	struct nvme_ctrl *ctrl;
+
+	mutex_lock(&subsys->lock);
+	list_for_each_entry(ctrl, &subsys->ctrls, subsys_entry) {
+		if (ctrl->state != NVME_CTRL_DELETING &&
+		    ctrl->state != NVME_CTRL_DEAD)
+			count++;
+	}
+	mutex_unlock(&subsys->lock);
+
+	return count;
+}
+
 static int nvme_init_subsystem(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
 {
 	struct nvme_subsystem *subsys, *found;
@@ -2090,7 +2109,7 @@ static int nvme_init_subsystem(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
 		 * Verify that the subsystem actually supports multiple
 		 * controllers, else bail out.
 		 */
-		if (!(id->cmic & (1 << 1))) {
+		if (nvme_active_ctrls(found) && !(id->cmic & (1 << 1))) {
 			dev_err(ctrl->device,
 				"ignoring ctrl due to duplicate subnqn (%s).\n",
 				found->subnqn);
@@ -2475,14 +2494,14 @@ static ssize_t wwid_show(struct device *dev, struct device_attribute *attr,
 		serial_len, subsys->serial, model_len, subsys->model,
 		head->ns_id);
 }
-static DEVICE_ATTR(wwid, S_IRUGO, wwid_show, NULL);
+static DEVICE_ATTR_RO(wwid);
 
 static ssize_t nguid_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
 	return sprintf(buf, "%pU\n", dev_to_ns_head(dev)->ids.nguid);
 }
-static DEVICE_ATTR(nguid, S_IRUGO, nguid_show, NULL);
+static DEVICE_ATTR_RO(nguid);
 
 static ssize_t uuid_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
@@ -2499,21 +2518,21 @@ static ssize_t uuid_show(struct device *dev, struct device_attribute *attr,
 	}
 	return sprintf(buf, "%pU\n", &ids->uuid);
 }
-static DEVICE_ATTR(uuid, S_IRUGO, uuid_show, NULL);
+static DEVICE_ATTR_RO(uuid);
 
 static ssize_t eui_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
 	return sprintf(buf, "%8ph\n", dev_to_ns_head(dev)->ids.eui64);
 }
-static DEVICE_ATTR(eui, S_IRUGO, eui_show, NULL);
+static DEVICE_ATTR_RO(eui);
 
 static ssize_t nsid_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
 	return sprintf(buf, "%d\n", dev_to_ns_head(dev)->ns_id);
 }
-static DEVICE_ATTR(nsid, S_IRUGO, nsid_show, NULL);
+static DEVICE_ATTR_RO(nsid);
 
 static struct attribute *nvme_ns_id_attrs[] = {
 	&dev_attr_wwid.attr,
@@ -2704,6 +2723,7 @@ static int __nvme_check_ids(struct nvme_subsystem *subsys,
 
 	list_for_each_entry(h, &subsys->nsheads, entry) {
 		if (nvme_ns_ids_valid(&new->ids) &&
+		    !list_empty(&h->list) &&
 		    nvme_ns_ids_equal(&new->ids, &h->ids))
 			return -EINVAL;
 	}
@@ -2744,6 +2764,9 @@ static struct nvme_ns_head *nvme_alloc_ns_head(struct nvme_ctrl *ctrl,
 		goto out_cleanup_srcu;
 
 	list_add_tail(&head->entry, &ctrl->subsys->nsheads);
+
+	kref_get(&ctrl->subsys->ref);
+
 	return head;
 out_cleanup_srcu:
 	cleanup_srcu_struct(&head->srcu);
@@ -2885,31 +2908,7 @@ static void nvme_alloc_ns(struct nvme_ctrl *ctrl, unsigned nsid)
 	if (nvme_init_ns_head(ns, nsid, id, &new))
 		goto out_free_id;
 	nvme_setup_streams_ns(ctrl, ns);
-	
-#ifdef CONFIG_NVME_MULTIPATH
-	/*
-	 * If multipathing is enabled we need to always use the subsystem
-	 * instance number for numbering our devices to avoid conflicts
-	 * between subsystems that have multiple controllers and thus use
-	 * the multipath-aware subsystem node and those that have a single
-	 * controller and use the controller node directly.
-	 */
-	if (ns->head->disk) {
-		sprintf(disk_name, "nvme%dc%dn%d", ctrl->subsys->instance,
-				ctrl->cntlid, ns->head->instance);
-		flags = GENHD_FL_HIDDEN;
-	} else {
-		sprintf(disk_name, "nvme%dn%d", ctrl->subsys->instance,
-				ns->head->instance);
-	}
-#else
-	/*
-	 * But without the multipath code enabled, multiple controller per
-	 * subsystems are visible as devices and thus we cannot use the
-	 * subsystem instance.
-	 */
-	sprintf(disk_name, "nvme%dn%d", ctrl->instance, ns->head->instance);
-#endif
+	nvme_set_disk_name(disk_name, ns, ctrl, &flags);
 
 	if ((ctrl->quirks & NVME_QUIRK_LIGHTNVM) && id->vs[0] == 0x1) {
 		if (nvme_nvm_register(ns, disk_name, node)) {
@@ -2950,7 +2949,6 @@ static void nvme_alloc_ns(struct nvme_ctrl *ctrl, unsigned nsid)
 
 	if (new)
 		nvme_mpath_add_disk(ns->head);
-	nvme_mpath_add_disk_links(ns);
 	return;
  out_unlink_ns:
 	mutex_lock(&ctrl->subsys->lock);
@@ -2970,7 +2968,6 @@ static void nvme_ns_remove(struct nvme_ns *ns)
 		return;
 
 	if (ns->disk && ns->disk->flags & GENHD_FL_UP) {
-		nvme_mpath_remove_disk_links(ns);
 		sysfs_remove_group(&disk_to_dev(ns->disk)->kobj,
 					&nvme_ns_id_attr_group);
 		if (ns->ndev)

@@ -249,7 +249,7 @@ static void dpaa2_eth_rx(struct dpaa2_eth_priv *priv,
 	vaddr = dpaa2_iova_to_virt(priv->iommu_domain, addr);
 	dma_unmap_single(dev, addr, DPAA2_ETH_RX_BUF_SIZE, DMA_FROM_DEVICE);
 
-	fas = dpaa2_get_fas(vaddr);
+	fas = dpaa2_get_fas(vaddr, false);
 	prefetch(fas);
 	buf_data = vaddr + dpaa2_fd_get_offset(fd);
 	prefetch(buf_data);
@@ -322,7 +322,7 @@ static int consume_frames(struct dpaa2_eth_channel *ch)
 		}
 
 		fd = dpaa2_dq_fd(dq);
-		fq = (struct dpaa2_eth_fq *)dpaa2_dq_fqd_ctx(dq);
+		fq = (struct dpaa2_eth_fq *)(uintptr_t)dpaa2_dq_fqd_ctx(dq);
 		fq->stats.frames++;
 
 		fq->consume(priv, ch, fd, &ch->napi);
@@ -373,19 +373,19 @@ static int build_sg_fd(struct dpaa2_eth_priv *priv,
 	/* Prepare the HW SGT structure */
 	sgt_buf_size = priv->tx_data_offset +
 		       sizeof(struct dpaa2_sg_entry) * (1 + num_dma_bufs);
-	sgt_buf = kzalloc(sgt_buf_size + DPAA2_ETH_TX_BUF_ALIGN, GFP_ATOMIC);
+	sgt_buf = netdev_alloc_frag(sgt_buf_size + DPAA2_ETH_TX_BUF_ALIGN);
 	if (unlikely(!sgt_buf)) {
 		err = -ENOMEM;
 		goto sgt_buf_alloc_failed;
 	}
-	sgt_buf = PTR_ALIGN(sgt_buf, DPAA2_ETH_TX_BUF_ALIGN);
+	memset(sgt_buf, 0, sgt_buf_size);
 
 	/* PTA from egress side is passed as is to the confirmation side so
 	 * we need to clear some fields here in order to find consistent values
 	 * on TX confirmation. We are clearing FAS (Frame Annotation Status)
 	 * field from the hardware annotation area
 	 */
-	fas = dpaa2_get_fas(sgt_buf);
+	fas = dpaa2_get_fas(sgt_buf, true);
 	memset(fas, 0, DPAA2_FAS_SIZE);
 
 	sgt = (struct dpaa2_sg_entry *)(sgt_buf + priv->tx_data_offset);
@@ -430,7 +430,7 @@ static int build_sg_fd(struct dpaa2_eth_priv *priv,
 	return 0;
 
 dma_map_single_failed:
-	kfree(sgt_buf);
+	skb_free_frag(sgt_buf);
 sgt_buf_alloc_failed:
 	dma_unmap_sg(dev, scl, num_sg, DMA_BIDIRECTIONAL);
 dma_map_sg_failed:
@@ -458,7 +458,7 @@ static int build_single_fd(struct dpaa2_eth_priv *priv,
 	 * on TX confirmation. We are clearing FAS (Frame Annotation Status)
 	 * field from the hardware annotation area
 	 */
-	fas = dpaa2_get_fas(buffer_start);
+	fas = dpaa2_get_fas(buffer_start, true);
 	memset(fas, 0, DPAA2_FAS_SIZE);
 
 	/* Store a backpointer to the skb at the beginning of the buffer
@@ -510,7 +510,7 @@ static void free_tx_fd(const struct dpaa2_eth_priv *priv,
 
 	fd_addr = dpaa2_fd_get_addr(fd);
 	skbh = dpaa2_iova_to_virt(priv->iommu_domain, fd_addr);
-	fas = dpaa2_get_fas(skbh);
+	fas = dpaa2_get_fas(skbh, true);
 
 	if (fd_format == dpaa2_fd_single) {
 		skb = *skbh;
@@ -550,9 +550,9 @@ static void free_tx_fd(const struct dpaa2_eth_priv *priv,
 	if (status)
 		*status = le32_to_cpu(fas->status);
 
-	/* Free SGT buffer kmalloc'ed on tx */
+	/* Free SGT buffer allocated on tx */
 	if (fd_format != dpaa2_fd_single)
-		kfree(skbh);
+		skb_free_frag(skbh);
 
 	/* Move on with skb release */
 	dev_kfree_skb(skb);
@@ -1924,7 +1924,7 @@ static int setup_rx_flow(struct dpaa2_eth_priv *priv,
 	queue.destination.id = fq->channel->dpcon_id;
 	queue.destination.type = DPNI_DEST_DPCON;
 	queue.destination.priority = 1;
-	queue.user_context = (u64)fq;
+	queue.user_context = (u64)(uintptr_t)fq;
 	err = dpni_set_queue(priv->mc_io, 0, priv->mc_token,
 			     DPNI_QUEUE_RX, 0, fq->flowid,
 			     DPNI_QUEUE_OPT_USER_CTX | DPNI_QUEUE_OPT_DEST,
@@ -1976,7 +1976,7 @@ static int setup_tx_flow(struct dpaa2_eth_priv *priv,
 	queue.destination.id = fq->channel->dpcon_id;
 	queue.destination.type = DPNI_DEST_DPCON;
 	queue.destination.priority = 0;
-	queue.user_context = (u64)fq;
+	queue.user_context = (u64)(uintptr_t)fq;
 	err = dpni_set_queue(priv->mc_io, 0, priv->mc_token,
 			     DPNI_QUEUE_TX_CONFIRM, 0, fq->flowid,
 			     DPNI_QUEUE_OPT_USER_CTX | DPNI_QUEUE_OPT_DEST,

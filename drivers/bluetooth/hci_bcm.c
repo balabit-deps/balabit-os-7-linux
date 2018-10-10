@@ -90,6 +90,10 @@ struct bcm_data {
 static DEFINE_MUTEX(bcm_device_lock);
 static LIST_HEAD(bcm_device_list);
 
+static int irq_polarity = -1;
+module_param(irq_polarity, int, 0444);
+MODULE_PARM_DESC(irq_polarity, "IRQ polarity 0: active-high 1: active-low");
+
 static inline void host_set_baudrate(struct hci_uart *hu, unsigned int speed)
 {
 	if (hu->serdev)
@@ -379,7 +383,7 @@ static int bcm_close(struct hci_uart *hu)
 		pm_runtime_disable(bdev->dev);
 		pm_runtime_set_suspended(bdev->dev);
 
-		if (device_can_wakeup(bdev->dev)) {
+		if (bdev->irq > 0) {
 			devm_free_irq(bdev->dev, bdev->irq, bdev);
 			device_init_wakeup(bdev->dev, false);
 		}
@@ -577,11 +581,9 @@ static int bcm_suspend_device(struct device *dev)
 	}
 
 	/* Suspend the device */
-	if (bdev->device_wakeup) {
-		gpiod_set_value(bdev->device_wakeup, false);
-		bt_dev_dbg(bdev, "suspend, delaying 15 ms");
-		mdelay(15);
-	}
+	gpiod_set_value(bdev->device_wakeup, false);
+	bt_dev_dbg(bdev, "suspend, delaying 15 ms");
+	mdelay(15);
 
 	return 0;
 }
@@ -592,11 +594,9 @@ static int bcm_resume_device(struct device *dev)
 
 	bt_dev_dbg(bdev, "");
 
-	if (bdev->device_wakeup) {
-		gpiod_set_value(bdev->device_wakeup, true);
-		bt_dev_dbg(bdev, "resume, delaying 15 ms");
-		mdelay(15);
-	}
+	gpiod_set_value(bdev->device_wakeup, true);
+	bt_dev_dbg(bdev, "resume, delaying 15 ms");
+	mdelay(15);
 
 	/* When this executes, the device has woken up already */
 	if (bdev->is_suspended && bdev->hu) {
@@ -632,7 +632,7 @@ static int bcm_suspend(struct device *dev)
 	if (pm_runtime_active(dev))
 		bcm_suspend_device(dev);
 
-	if (device_may_wakeup(dev)) {
+	if (device_may_wakeup(dev) && bdev->irq > 0) {
 		error = enable_irq_wake(bdev->irq);
 		if (!error)
 			bt_dev_dbg(bdev, "BCM irq: enabled");
@@ -662,7 +662,7 @@ static int bcm_resume(struct device *dev)
 	if (!bdev->hu)
 		goto unlock;
 
-	if (device_may_wakeup(dev)) {
+	if (device_may_wakeup(dev) && bdev->irq > 0) {
 		disable_irq_wake(bdev->irq);
 		bt_dev_dbg(bdev, "BCM irq: disabled");
 	}
@@ -705,22 +705,6 @@ static const struct acpi_gpio_mapping acpi_bcm_int_first_gpios[] = {
 #ifdef CONFIG_ACPI
 /* IRQ polarity of some chipsets are not defined correctly in ACPI table. */
 static const struct dmi_system_id bcm_active_low_irq_dmi_table[] = {
-	{
-		.ident = "Asus T100TA",
-		.matches = {
-			DMI_EXACT_MATCH(DMI_SYS_VENDOR,
-					"ASUSTeK COMPUTER INC."),
-			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "T100TA"),
-		},
-	},
-	{
-		.ident = "Asus T100CHI",
-		.matches = {
-			DMI_EXACT_MATCH(DMI_SYS_VENDOR,
-					"ASUSTeK COMPUTER INC."),
-			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "T100CHI"),
-		},
-	},
 	{	/* Handle ThinkPad 8 tablets with BCM2E55 chipset ACPI ID */
 		.ident = "Lenovo ThinkPad 8",
 		.matches = {
@@ -748,7 +732,9 @@ static int bcm_resource(struct acpi_resource *ares, void *data)
 	switch (ares->type) {
 	case ACPI_RESOURCE_TYPE_EXTENDED_IRQ:
 		irq = &ares->data.extended_irq;
-		dev->irq_active_low = irq->polarity == ACPI_ACTIVE_LOW;
+		if (irq->polarity != ACPI_ACTIVE_LOW)
+			dev_info(dev->dev, "ACPI Interrupt resource is active-high, this is usually wrong, treating the IRQ as active-low\n");
+		dev->irq_active_low = true;
 		break;
 
 	case ACPI_RESOURCE_TYPE_GPIO:
@@ -779,8 +765,7 @@ static int bcm_get_resources(struct bcm_device *dev)
 
 	dev->clk = devm_clk_get(dev->dev, NULL);
 
-	dev->device_wakeup = devm_gpiod_get_optional(dev->dev,
-						     "device-wakeup",
+	dev->device_wakeup = devm_gpiod_get_optional(dev->dev, "device-wakeup",
 						     GPIOD_OUT_LOW);
 	if (IS_ERR(dev->device_wakeup))
 		return PTR_ERR(dev->device_wakeup);
@@ -839,11 +824,17 @@ static int bcm_acpi_probe(struct bcm_device *dev)
 	}
 	acpi_dev_free_resource_list(&resources);
 
-	dmi_id = dmi_first_match(bcm_active_low_irq_dmi_table);
-	if (dmi_id) {
-		dev_warn(dev->dev, "%s: Overwriting IRQ polarity to active low",
-			    dmi_id->ident);
-		dev->irq_active_low = true;
+	if (irq_polarity != -1) {
+		dev->irq_active_low = irq_polarity;
+		dev_warn(dev->dev, "Overwriting IRQ polarity to active %s by module-param\n",
+			 dev->irq_active_low ? "low" : "high");
+	} else {
+		dmi_id = dmi_first_match(bcm_active_low_irq_dmi_table);
+		if (dmi_id) {
+			dev_warn(dev->dev, "%s: Overwriting IRQ polarity to active low",
+				 dmi_id->ident);
+			dev->irq_active_low = true;
+		}
 	}
 
 	return 0;

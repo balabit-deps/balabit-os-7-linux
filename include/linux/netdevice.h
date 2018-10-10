@@ -1669,8 +1669,6 @@ struct net_device {
 	unsigned long		base_addr;
 	int			irq;
 
-	atomic_t		carrier_changes;
-
 	/*
 	 *	Some hardware also needs these fields (state,dev_list,
 	 *	napi_list,unreg_list,close_list) but they are not
@@ -1707,6 +1705,10 @@ struct net_device {
 	atomic_long_t		rx_dropped;
 	atomic_long_t		tx_dropped;
 	atomic_long_t		rx_nohandler;
+
+	/* Stats to monitor link on/off, flapping */
+	atomic_t		carrier_up_count;
+	atomic_t		carrier_down_count;
 
 #ifdef CONFIG_WIRELESS_EXT
 	const struct iw_handler_def *wireless_handlers;
@@ -4402,8 +4404,8 @@ do {								\
 	WARN(1, "netdevice: %s%s\n" format, netdev_name(dev),	\
 	     netdev_reg_state(dev), ##args)
 
-#define netdev_WARN_ONCE(dev, condition, format, arg...)		\
-	WARN_ONCE(1, "netdevice: %s%s\n" format, netdev_name(dev)	\
+#define netdev_WARN_ONCE(dev, format, args...)				\
+	WARN_ONCE(1, "netdevice: %s%s\n" format, netdev_name(dev),	\
 		  netdev_reg_state(dev), ##args)
 
 /* netif printk helpers, similar to netdev_printk */

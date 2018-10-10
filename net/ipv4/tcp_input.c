@@ -578,8 +578,8 @@ static inline void tcp_rcv_rtt_measure_ts(struct sock *sk,
 void tcp_rcv_space_adjust(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	u32 copied;
 	int time;
-	int copied;
 
 	tcp_mstamp_refresh(tp);
 	time = tcp_stamp_us_delta(tp->tcp_mstamp, tp->rcvq_space.time);
@@ -602,12 +602,13 @@ void tcp_rcv_space_adjust(struct sock *sk)
 
 	if (sock_net(sk)->ipv4.sysctl_tcp_moderate_rcvbuf &&
 	    !(sk->sk_userlocks & SOCK_RCVBUF_LOCK)) {
-		int rcvwin, rcvmem, rcvbuf;
+		int rcvmem, rcvbuf;
+		u64 rcvwin;
 
 		/* minimal window to cope with packet losses, assuming
 		 * steady state. Add some cushion because of small variations.
 		 */
-		rcvwin = (copied << 1) + 16 * tp->advmss;
+		rcvwin = ((u64)copied << 1) + 16 * tp->advmss;
 
 		/* If rate increased by 25%,
 		 *	assume slow start, rcvwin = 3 * copied
@@ -627,13 +628,14 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		while (tcp_win_from_space(sk, rcvmem) < tp->advmss)
 			rcvmem += 128;
 
-		rcvbuf = min(rcvwin / tp->advmss * rcvmem,
+		do_div(rcvwin, tp->advmss);
+		rcvbuf = min_t(u64, rcvwin * rcvmem,
 			     sock_net(sk)->ipv4.sysctl_tcp_rmem[2]);
 		if (rcvbuf > sk->sk_rcvbuf) {
 			sk->sk_rcvbuf = rcvbuf;
 
 			/* Make the window clamp follow along.  */
-			tp->window_clamp = rcvwin;
+			tp->window_clamp = tcp_win_from_space(sk, rcvbuf);
 		}
 	}
 	tp->rcvq_space.space = copied;
@@ -1977,11 +1979,6 @@ void tcp_enter_loss(struct sock *sk)
 	/* F-RTO RFC5682 sec 3.1 step 1: retransmit SND.UNA if no previous
 	 * loss recovery is underway except recurring timeout(s) on
 	 * the same SND.UNA (sec 3.2). Disable F-RTO on path MTU probing
-	 *
-	 * In theory F-RTO can be used repeatedly during loss recovery.
-	 * In practice this interacts badly with broken middle-boxes that
-	 * falsely raise the receive window, which results in repeated
-	 * timeouts and stop-and-go behavior.
 	 */
 	tp->frto = net->ipv4.sysctl_tcp_frto &&
 		   (new_recovery || icsk->icsk_retransmits) &&
@@ -2637,18 +2634,14 @@ static void tcp_process_loss(struct sock *sk, int flag, bool is_dupack,
 	    tcp_try_undo_loss(sk, false))
 		return;
 
-	/* The ACK (s)acks some never-retransmitted data meaning not all
-	 * the data packets before the timeout were lost. Therefore we
-	 * undo the congestion window and state. This is essentially
-	 * the operation in F-RTO (RFC5682 section 3.1 step 3.b). Since
-	 * a retransmitted skb is permantly marked, we can apply such an
-	 * operation even if F-RTO was not used.
-	 */
-	if ((flag & FLAG_ORIG_SACK_ACKED) &&
-	    tcp_try_undo_loss(sk, tp->undo_marker))
-		return;
-
 	if (tp->frto) { /* F-RTO RFC5682 sec 3.1 (sack enhanced version). */
+		/* Step 3.b. A timeout is spurious if not all data are
+		 * lost, i.e., never-retransmitted data are (s)acked.
+		 */
+		if ((flag & FLAG_ORIG_SACK_ACKED) &&
+		    tcp_try_undo_loss(sk, true))
+			return;
+
 		if (after(tp->snd_nxt, tp->high_seq)) {
 			if (flag & FLAG_DATA_SACKED || is_dupack)
 				tp->frto = 0; /* Step 3.a. loss was real */
@@ -3867,11 +3860,8 @@ const u8 *tcp_parse_md5sig_option(const struct tcphdr *th)
 	int length = (th->doff << 2) - sizeof(*th);
 	const u8 *ptr = (const u8 *)(th + 1);
 
-	/* If the TCP option is too short, we can short cut */
-	if (length < TCPOLEN_MD5SIG)
-		return NULL;
-
-	while (length > 0) {
+	/* If not enough data remaining, we can short cut */
+	while (length >= TCPOLEN_MD5SIG) {
 		int opcode = *ptr++;
 		int opsize;
 
@@ -3988,6 +3978,7 @@ void tcp_reset(struct sock *sk)
 	/* This barrier is coupled with smp_rmb() in tcp_poll() */
 	smp_wmb();
 
+	tcp_write_queue_purge(sk);
 	tcp_done(sk);
 
 	if (!sock_flag(sk, SOCK_DEAD))
@@ -4290,6 +4281,23 @@ static bool tcp_try_coalesce(struct sock *sk,
 	return true;
 }
 
+static bool tcp_ooo_try_coalesce(struct sock *sk,
+			     struct sk_buff *to,
+			     struct sk_buff *from,
+			     bool *fragstolen)
+{
+	bool res = tcp_try_coalesce(sk, to, from, fragstolen);
+
+	/* In case tcp_drop() is called later, update to->gso_segs */
+	if (res) {
+		u32 gso_segs = max_t(u16, 1, skb_shinfo(to)->gso_segs) +
+			       max_t(u16, 1, skb_shinfo(from)->gso_segs);
+
+		skb_shinfo(to)->gso_segs = min_t(u32, gso_segs, 0xFFFF);
+	}
+	return res;
+}
+
 static void tcp_drop(struct sock *sk, struct sk_buff *skb)
 {
 	sk_drops_add(sk, skb);
@@ -4413,8 +4421,8 @@ static void tcp_data_queue_ofo(struct sock *sk, struct sk_buff *skb)
 	/* In the typical case, we are adding an skb to the end of the list.
 	 * Use of ooo_last_skb avoids the O(Log(N)) rbtree lookup.
 	 */
-	if (tcp_try_coalesce(sk, tp->ooo_last_skb,
-			     skb, &fragstolen)) {
+	if (tcp_ooo_try_coalesce(sk, tp->ooo_last_skb,
+				 skb, &fragstolen)) {
 coalesce_done:
 		tcp_grow_window(sk, skb);
 		kfree_skb_partial(skb, fragstolen);
@@ -4442,7 +4450,7 @@ coalesce_done:
 				/* All the bits are present. Drop. */
 				NET_INC_STATS(sock_net(sk),
 					      LINUX_MIB_TCPOFOMERGE);
-				__kfree_skb(skb);
+				tcp_drop(sk, skb);
 				skb = NULL;
 				tcp_dsack_set(sk, seq, end_seq);
 				goto add_sack;
@@ -4461,11 +4469,11 @@ coalesce_done:
 						 TCP_SKB_CB(skb1)->end_seq);
 				NET_INC_STATS(sock_net(sk),
 					      LINUX_MIB_TCPOFOMERGE);
-				__kfree_skb(skb1);
+				tcp_drop(sk, skb1);
 				goto merge_right;
 			}
-		} else if (tcp_try_coalesce(sk, skb1,
-					    skb, &fragstolen)) {
+		} else if (tcp_ooo_try_coalesce(sk, skb1,
+						skb, &fragstolen)) {
 			goto coalesce_done;
 		}
 		p = &parent->rb_right;
@@ -4825,6 +4833,7 @@ end:
 static void tcp_collapse_ofo_queue(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	u32 range_truesize, sum_tiny = 0;
 	struct sk_buff *skb, *head;
 	u32 start, end;
 
@@ -4836,6 +4845,7 @@ new_range:
 	}
 	start = TCP_SKB_CB(skb)->seq;
 	end = TCP_SKB_CB(skb)->end_seq;
+	range_truesize = skb->truesize;
 
 	for (head = skb;;) {
 		skb = skb_rb_next(skb);
@@ -4846,11 +4856,20 @@ new_range:
 		if (!skb ||
 		    after(TCP_SKB_CB(skb)->seq, end) ||
 		    before(TCP_SKB_CB(skb)->end_seq, start)) {
-			tcp_collapse(sk, NULL, &tp->out_of_order_queue,
-				     head, skb, start, end);
+			/* Do not attempt collapsing tiny skbs */
+			if (range_truesize != head->truesize ||
+			    end - start >= SKB_WITH_OVERHEAD(SK_MEM_QUANTUM)) {
+				tcp_collapse(sk, NULL, &tp->out_of_order_queue,
+					     head, skb, start, end);
+			} else {
+				sum_tiny += range_truesize;
+				if (sum_tiny > sk->sk_rcvbuf >> 3)
+					return;
+			}
 			goto new_range;
 		}
 
+		range_truesize += skb->truesize;
 		if (unlikely(before(TCP_SKB_CB(skb)->seq, start)))
 			start = TCP_SKB_CB(skb)->seq;
 		if (after(TCP_SKB_CB(skb)->end_seq, end))
@@ -4865,6 +4884,7 @@ new_range:
  * 2) not add too big latencies if thousands of packets sit there.
  *    (But if application shrinks SO_RCVBUF, we could still end up
  *     freeing whole queue here)
+ * 3) Drop at least 12.5 % of sk_rcvbuf to avoid malicious attacks.
  *
  * Return true if queue has shrunk.
  */
@@ -4872,20 +4892,26 @@ static bool tcp_prune_ofo_queue(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct rb_node *node, *prev;
+	int goal;
 
 	if (RB_EMPTY_ROOT(&tp->out_of_order_queue))
 		return false;
 
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_OFOPRUNED);
+	goal = sk->sk_rcvbuf >> 3;
 	node = &tp->ooo_last_skb->rbnode;
 	do {
 		prev = rb_prev(node);
 		rb_erase(node, &tp->out_of_order_queue);
+		goal -= rb_to_skb(node)->truesize;
 		tcp_drop(sk, rb_to_skb(node));
-		sk_mem_reclaim(sk);
-		if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf &&
-		    !tcp_under_memory_pressure(sk))
-			break;
+		if (!prev || goal <= 0) {
+			sk_mem_reclaim(sk);
+			if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf &&
+			    !tcp_under_memory_pressure(sk))
+				break;
+			goal = sk->sk_rcvbuf >> 3;
+		}
 		node = prev;
 	} while (node);
 	tp->ooo_last_skb = rb_to_skb(prev);
@@ -4919,6 +4945,9 @@ static int tcp_prune_queue(struct sock *sk)
 		tcp_clamp_window(sk);
 	else if (tcp_under_memory_pressure(sk))
 		tp->rcv_ssthresh = min(tp->rcv_ssthresh, 4U * tp->advmss);
+
+	if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf)
+		return 0;
 
 	tcp_collapse_ofo_queue(sk);
 	if (!skb_queue_empty(&sk->sk_receive_queue))

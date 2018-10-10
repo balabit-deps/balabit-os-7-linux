@@ -453,6 +453,21 @@ static inline void permanent_kmaps_init(pgd_t *pgd_base)
 }
 #endif /* CONFIG_HIGHMEM */
 
+void __init sync_initial_page_table(void)
+{
+	clone_pgd_range(initial_page_table + KERNEL_PGD_BOUNDARY,
+			swapper_pg_dir     + KERNEL_PGD_BOUNDARY,
+			KERNEL_PGD_PTRS);
+
+	/*
+	 * sync back low identity map too.  It is used for example
+	 * in the 32-bit EFI stub.
+	 */
+	clone_pgd_range(initial_page_table,
+			swapper_pg_dir     + KERNEL_PGD_BOUNDARY,
+			min(KERNEL_PGD_PTRS, KERNEL_PGD_BOUNDARY));
+}
+
 void __init native_pagetable_init(void)
 {
 	unsigned long pfn, va;
@@ -543,8 +558,14 @@ static void __init pagetable_init(void)
 	permanent_kmaps_init(pgd_base);
 }
 
-pteval_t __supported_pte_mask __read_mostly = ~(_PAGE_NX | _PAGE_GLOBAL);
+#define DEFAULT_PTE_MASK ~(_PAGE_NX | _PAGE_GLOBAL)
+/* Bits supported by the hardware: */
+pteval_t __supported_pte_mask __read_mostly = DEFAULT_PTE_MASK;
+/* Bits allowed in normal kernel mappings: */
+pteval_t __default_kernel_pte_mask __read_mostly = DEFAULT_PTE_MASK;
 EXPORT_SYMBOL_GPL(__supported_pte_mask);
+/* Used in PAGE_KERNEL_* macros which are reasonably used out-of-tree: */
+EXPORT_SYMBOL(__default_kernel_pte_mask);
 
 /* user-defined highmem size */
 static unsigned int highmem_pages = -1;
@@ -758,6 +779,9 @@ void __init mem_init(void)
 	 * important here.
 	 */
 	set_highmem_pages_init();
+#ifdef CONFIG_HIGHMEM
+	set_default_mem_hotplug_zone(ZONE_HIGHMEM);
+#endif
 
 	/* this will put all low memory onto the freelists */
 	free_all_bootmem();

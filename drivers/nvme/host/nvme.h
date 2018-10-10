@@ -81,6 +81,11 @@ enum nvme_quirks {
 	 * Supports the LighNVM command set if indicated in vs[1].
 	 */
 	NVME_QUIRK_LIGHTNVM			= (1 << 6),
+
+	/*
+	 * Set MEDIUM priority on SQ creation
+	 */
+	NVME_QUIRK_MEDIUM_PRIO_SQ		= (1 << 7),
 };
 
 /*
@@ -400,14 +405,14 @@ extern const struct attribute_group nvme_ns_id_attr_group;
 extern const struct block_device_operations nvme_ns_head_ops;
 
 #ifdef CONFIG_NVME_MULTIPATH
+void nvme_set_disk_name(char *disk_name, struct nvme_ns *ns,
+			struct nvme_ctrl *ctrl, int *flags);
 void nvme_failover_req(struct request *req);
 bool nvme_req_needs_failover(struct request *req);
 void nvme_kick_requeue_lists(struct nvme_ctrl *ctrl);
 int nvme_mpath_alloc_disk(struct nvme_ctrl *ctrl,struct nvme_ns_head *head);
 void nvme_mpath_add_disk(struct nvme_ns_head *head);
-void nvme_mpath_add_disk_links(struct nvme_ns *ns);
 void nvme_mpath_remove_disk(struct nvme_ns_head *head);
-void nvme_mpath_remove_disk_links(struct nvme_ns *ns);
 
 static inline void nvme_mpath_clear_current_path(struct nvme_ns *ns)
 {
@@ -427,6 +432,16 @@ static inline void nvme_mpath_check_last_path(struct nvme_ns *ns)
 }
 
 #else
+/*
+ * Without the multipath code enabled, multiple controller per subsystems are
+ * visible as devices and thus we cannot use the subsystem instance.
+ */
+static inline void nvme_set_disk_name(char *disk_name, struct nvme_ns *ns,
+				      struct nvme_ctrl *ctrl, int *flags)
+{
+	sprintf(disk_name, "nvme%dn%d", ctrl->instance, ns->head->instance);
+}
+
 static inline void nvme_failover_req(struct request *req)
 {
 }
@@ -446,12 +461,6 @@ static inline void nvme_mpath_add_disk(struct nvme_ns_head *head)
 {
 }
 static inline void nvme_mpath_remove_disk(struct nvme_ns_head *head)
-{
-}
-static inline void nvme_mpath_add_disk_links(struct nvme_ns *ns)
-{
-}
-static inline void nvme_mpath_remove_disk_links(struct nvme_ns *ns)
 {
 }
 static inline void nvme_mpath_clear_current_path(struct nvme_ns *ns)

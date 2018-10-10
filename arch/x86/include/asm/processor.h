@@ -91,7 +91,7 @@ struct cpuinfo_x86 {
 	__u8			x86;		/* CPU family */
 	__u8			x86_vendor;	/* CPU vendor */
 	__u8			x86_model;
-	__u8			x86_mask;
+	__u8			x86_stepping;
 #ifdef CONFIG_X86_64
 	/* Number of 4K pages in DTLB/ITLB combined(in pages): */
 	int			x86_tlbsize;
@@ -109,7 +109,7 @@ struct cpuinfo_x86 {
 	char			x86_vendor_id[16];
 	char			x86_model_id[64];
 	/* in KB - valid for CPUS which support this call: */
-	int			x86_cache_size;
+	unsigned int		x86_cache_size;
 	int			x86_cache_alignment;	/* In bytes */
 	/* Cache QoS architectural values: */
 	int			x86_cache_max_rmid;	/* max index */
@@ -132,6 +132,8 @@ struct cpuinfo_x86 {
 	/* Index into per_cpu list: */
 	u16			cpu_index;
 	u32			microcode;
+	/* Address space bits used by the cache internally */
+	u8			x86_cache_bits;
 	unsigned		initialized : 1;
 } __randomize_layout;
 
@@ -181,20 +183,16 @@ extern const struct seq_operations cpuinfo_op;
 
 extern void cpu_detect(struct cpuinfo_x86 *c);
 
+static inline unsigned long long l1tf_pfn_limit(void)
+{
+	return BIT_ULL(boot_cpu_data.x86_cache_bits - 1 - PAGE_SHIFT);
+}
+
 extern void early_cpu_init(void);
 extern void identify_boot_cpu(void);
 extern void identify_secondary_cpu(struct cpuinfo_x86 *);
 extern void print_cpu_info(struct cpuinfo_x86 *);
 void print_cpu_msr(struct cpuinfo_x86 *);
-extern void init_scattered_cpuid_features(struct cpuinfo_x86 *c);
-extern u32 get_scattered_cpuid_leaf(unsigned int level,
-				    unsigned int sub_leaf,
-				    enum cpuid_regs_idx reg);
-extern unsigned int init_intel_cacheinfo(struct cpuinfo_x86 *c);
-extern void init_amd_cacheinfo(struct cpuinfo_x86 *c);
-
-extern void detect_extended_topology(struct cpuinfo_x86 *c);
-extern void detect_ht(struct cpuinfo_x86 *c);
 
 #ifdef CONFIG_X86_32
 extern int have_cpuid_p(void);
@@ -459,8 +457,6 @@ struct thread_struct {
 	unsigned short		fsindex;
 	unsigned short		gsindex;
 #endif
-
-	u32			status;		/* thread synchronous flags */
 
 #ifdef CONFIG_X86_64
 	unsigned long		fsbase;
@@ -971,4 +967,17 @@ bool xen_set_default_idle(void);
 
 void stop_this_cpu(void *dummy);
 void df_debug(struct pt_regs *regs, long error_code);
+void microcode_check(void);
+
+enum l1tf_mitigations {
+	L1TF_MITIGATION_OFF,
+	L1TF_MITIGATION_FLUSH_NOWARN,
+	L1TF_MITIGATION_FLUSH,
+	L1TF_MITIGATION_FLUSH_NOSMT,
+	L1TF_MITIGATION_FULL,
+	L1TF_MITIGATION_FULL_FORCE
+};
+
+extern enum l1tf_mitigations l1tf_mitigation;
+
 #endif /* _ASM_X86_PROCESSOR_H */

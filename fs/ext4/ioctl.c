@@ -239,7 +239,7 @@ static int ext4_ioctl_setflags(struct inode *inode,
 	 * the relevant capability.
 	 */
 	if ((jflag ^ oldflags) & (EXT4_JOURNAL_DATA_FL)) {
-		if (!capable(CAP_SYS_RESOURCE))
+		if (!ns_capable(inode->i_sb->s_user_ns, CAP_SYS_RESOURCE))
 			goto flags_out;
 	}
 	if ((flags ^ oldflags) & EXT4_EXTENTS_FL)
@@ -337,8 +337,10 @@ static int ext4_ioctl_setproject(struct file *filp, __u32 projid)
 	if (EXT4_INODE_SIZE(sb) <= EXT4_GOOD_OLD_INODE_SIZE)
 		return -EOPNOTSUPP;
 
-	kprojid = make_kprojid(&init_user_ns, (projid_t)projid);
+	kprojid = make_kprojid(sb->s_user_ns, (projid_t)projid);
 
+	if (!projid_valid(kprojid))
+		return -EOVERFLOW;
 	if (projid_eq(kprojid, EXT4_I(inode)->i_projid))
 		return 0;
 
@@ -491,15 +493,13 @@ static int ext4_shutdown(struct super_block *sb, unsigned long arg)
 		set_bit(EXT4_FLAGS_SHUTDOWN, &sbi->s_ext4_flags);
 		if (sbi->s_journal && !is_journal_aborted(sbi->s_journal)) {
 			(void) ext4_force_commit(sb);
-			jbd2_journal_abort(sbi->s_journal, 0);
+			jbd2_journal_abort(sbi->s_journal, -ESHUTDOWN);
 		}
 		break;
 	case EXT4_GOING_FLAGS_NOLOGFLUSH:
 		set_bit(EXT4_FLAGS_SHUTDOWN, &sbi->s_ext4_flags);
-		if (sbi->s_journal && !is_journal_aborted(sbi->s_journal)) {
-			msleep(100);
-			jbd2_journal_abort(sbi->s_journal, 0);
-		}
+		if (sbi->s_journal && !is_journal_aborted(sbi->s_journal))
+			jbd2_journal_abort(sbi->s_journal, -ESHUTDOWN);
 		break;
 	default:
 		return -EINVAL;
@@ -914,7 +914,7 @@ resizefs_out:
 		struct fstrim_range range;
 		int ret = 0;
 
-		if (!capable(CAP_SYS_ADMIN))
+		if (!ns_capable(sb->s_user_ns, CAP_SYS_ADMIN))
 			return -EPERM;
 
 		if (!blk_queue_discard(q))
@@ -995,7 +995,7 @@ resizefs_out:
 		fa.fsx_xflags = ext4_iflags_to_xflags(ei->i_flags & EXT4_FL_USER_VISIBLE);
 
 		if (ext4_has_feature_project(inode->i_sb)) {
-			fa.fsx_projid = (__u32)from_kprojid(&init_user_ns,
+			fa.fsx_projid = (__u32)from_kprojid_munged(sb->s_user_ns,
 				EXT4_I(inode)->i_projid);
 		}
 

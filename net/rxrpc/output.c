@@ -407,6 +407,17 @@ done:
 							rxrpc_timer_set_for_lost_ack);
 			}
 		}
+
+		if (sp->hdr.seq == 1 &&
+		    !test_and_set_bit(RXRPC_CALL_BEGAN_RX_TIMER,
+				      &call->flags)) {
+			unsigned long nowj = jiffies, expect_rx_by;
+
+			expect_rx_by = nowj + call->next_rx_timo;
+			WRITE_ONCE(call->expect_rx_by, expect_rx_by);
+			rxrpc_reduce_call_timer(call, expect_rx_by, nowj,
+						rxrpc_timer_set_for_normal);
+		}
 	}
 
 	rxrpc_set_keepalive(call);
@@ -445,7 +456,7 @@ send_fragmentable:
 					(char *)&opt, sizeof(opt));
 		if (ret == 0) {
 			ret = kernel_sendmsg(conn->params.local->socket, &msg,
-					     iov, 1, iov[0].iov_len);
+					     iov, 2, len);
 
 			opt = IPV6_PMTUDISC_DO;
 			kernel_setsockopt(conn->params.local->socket,

@@ -51,6 +51,7 @@ config X86
 	select ARCH_HAS_DEVMEM_IS_ALLOWED
 	select ARCH_HAS_ELF_RANDOMIZE
 	select ARCH_HAS_FAST_MULTIPLIER
+	select ARCH_HAS_FILTER_PGPROT
 	select ARCH_HAS_FORTIFY_SOURCE
 	select ARCH_HAS_GCOV_PROFILE_ALL
 	select ARCH_HAS_KCOV			if X86_64
@@ -67,6 +68,7 @@ config X86
 	select ARCH_MIGHT_HAVE_ACPI_PDC		if ACPI
 	select ARCH_MIGHT_HAVE_PC_PARPORT
 	select ARCH_MIGHT_HAVE_PC_SERIO
+	select ARCH_SUPPORTS_ACPI
 	select ARCH_SUPPORTS_ATOMIC_RMW
 	select ARCH_SUPPORTS_DEFERRED_STRUCT_PAGE_INIT
 	select ARCH_SUPPORTS_NUMA_BALANCING	if X86_64
@@ -177,6 +179,7 @@ config X86
 	select HAVE_SYSCALL_TRACEPOINTS
 	select HAVE_UNSTABLE_SCHED_CLOCK
 	select HAVE_USER_RETURN_NOTIFIER
+	select HOTPLUG_SMT			if SMP
 	select IRQ_FORCED_THREADING
 	select PCI_LOCKLESS_CONFIG
 	select PERF_EVENTS
@@ -266,6 +269,9 @@ config ARCH_HAS_CPU_RELAX
 	def_bool y
 
 config ARCH_HAS_CACHE_LINE_SIZE
+	def_bool y
+
+config ARCH_HAS_FILTER_PGPROT
 	def_bool y
 
 config HAVE_SETUP_PER_CPU_AREA
@@ -432,6 +438,7 @@ config GOLDFISH
 config RETPOLINE
 	bool "Avoid speculative indirect branches in kernel"
 	default y
+	select STACK_VALIDATION if HAVE_STACK_VALIDATION
 	help
 	  Compile kernel with the retpoline compiler options to guard against
 	  kernel-to-user data leaks by avoiding speculative indirect
@@ -2897,6 +2904,8 @@ config HAVE_GENERIC_GUP
 source "net/Kconfig"
 
 source "drivers/Kconfig"
+
+source "ubuntu/Kconfig"
 
 source "drivers/firmware/Kconfig"
 

@@ -108,7 +108,17 @@ static const struct of_device_id blacklist[] __initconst = {
 
 	{ .compatible = "marvell,armadaxp", },
 
+	{ .compatible = "mediatek,mt2701", },
+	{ .compatible = "mediatek,mt2712", },
+	{ .compatible = "mediatek,mt7622", },
+	{ .compatible = "mediatek,mt7623", },
+	{ .compatible = "mediatek,mt817x", },
+	{ .compatible = "mediatek,mt8173", },
+	{ .compatible = "mediatek,mt8176", },
+
 	{ .compatible = "nvidia,tegra124", },
+
+	{ .compatible = "qcom,apq8016", },
 
 	{ .compatible = "st,stih407", },
 	{ .compatible = "st,stih410", },

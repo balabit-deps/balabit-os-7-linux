@@ -11,6 +11,7 @@
 #include <asm/kexec.h>
 #include <asm/processor-flags.h>
 #include <asm/pgtable_types.h>
+#include <asm/nospec-branch.h>
 
 /*
  * Must be relocatable PIC code callable as a C function
@@ -67,6 +68,9 @@ relocate_kernel:
 	movq	%rax, CR3(%r11)
 	movq	%cr4, %rax
 	movq	%rax, CR4(%r11)
+
+	/* Save CR4. Required to enable the right paging mode later. */
+	movq	%rax, %r13
 
 	/* zero out flags, and disable interrupts */
 	pushq $0
@@ -126,8 +130,13 @@ identity_mapped:
 	/*
 	 * Set cr4 to a known state:
 	 *  - physical address extension enabled
+	 *  - 5-level paging, if it was enabled before
 	 */
 	movl	$X86_CR4_PAE, %eax
+	testq	$X86_CR4_LA57, %r13
+	jz	1f
+	orl	$X86_CR4_LA57, %eax
+1:
 	movq	%rax, %cr4
 
 	jmp 1f
@@ -186,6 +195,7 @@ identity_mapped:
 1:
 	popq	%rdx
 	leaq	PAGE_SIZE(%r10), %rsp
+	ANNOTATE_RETPOLINE_SAFE
 	call	*%rdx
 
 	/* get the re-entry point of the peer system */

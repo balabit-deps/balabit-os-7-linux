@@ -589,6 +589,7 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 				ret = -ENOMEM;
 				goto out;
 			}
+			kfree(opts->transport);
 			opts->transport = p;
 			break;
 		case NVMF_OPT_NQN:
@@ -597,6 +598,7 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 				ret = -ENOMEM;
 				goto out;
 			}
+			kfree(opts->subsysnqn);
 			opts->subsysnqn = p;
 			nqnlen = strlen(opts->subsysnqn);
 			if (nqnlen >= NVMF_NQN_SIZE) {
@@ -608,8 +610,10 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 			opts->discovery_nqn =
 				!(strcmp(opts->subsysnqn,
 					 NVME_DISC_SUBSYS_NAME));
-			if (opts->discovery_nqn)
+			if (opts->discovery_nqn) {
+				opts->kato = 0;
 				opts->nr_io_queues = 0;
+			}
 			break;
 		case NVMF_OPT_TRADDR:
 			p = match_strdup(args);
@@ -617,6 +621,7 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 				ret = -ENOMEM;
 				goto out;
 			}
+			kfree(opts->traddr);
 			opts->traddr = p;
 			break;
 		case NVMF_OPT_TRSVCID:
@@ -625,6 +630,7 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 				ret = -ENOMEM;
 				goto out;
 			}
+			kfree(opts->trsvcid);
 			opts->trsvcid = p;
 			break;
 		case NVMF_OPT_QUEUE_SIZE:
@@ -706,6 +712,7 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 				ret = -EINVAL;
 				goto out;
 			}
+			nvmf_host_put(opts->host);
 			opts->host = nvmf_host_add(p);
 			kfree(p);
 			if (!opts->host) {
@@ -731,6 +738,7 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 				ret = -ENOMEM;
 				goto out;
 			}
+			kfree(opts->host_traddr);
 			opts->host_traddr = p;
 			break;
 		case NVMF_OPT_HOST_ID:
@@ -869,32 +877,41 @@ nvmf_create_ctrl(struct device *dev, const char *buf, size_t count)
 		goto out_unlock;
 	}
 
+	if (!try_module_get(ops->module)) {
+		ret = -EBUSY;
+		goto out_unlock;
+	}
+
 	ret = nvmf_check_required_opts(opts, ops->required_opts);
 	if (ret)
-		goto out_unlock;
+		goto out_module_put;
 	ret = nvmf_check_allowed_opts(opts, NVMF_ALLOWED_OPTS |
 				ops->allowed_opts | ops->required_opts);
 	if (ret)
-		goto out_unlock;
+		goto out_module_put;
 
 	ctrl = ops->create_ctrl(dev, opts);
 	if (IS_ERR(ctrl)) {
 		ret = PTR_ERR(ctrl);
-		goto out_unlock;
+		goto out_module_put;
 	}
 
 	if (strcmp(ctrl->subsys->subnqn, opts->subsysnqn)) {
 		dev_warn(ctrl->device,
 			"controller returned incorrect NQN: \"%s\".\n",
 			ctrl->subsys->subnqn);
+		module_put(ops->module);
 		up_read(&nvmf_transports_rwsem);
 		nvme_delete_ctrl_sync(ctrl);
 		return ERR_PTR(-EINVAL);
 	}
 
+	module_put(ops->module);
 	up_read(&nvmf_transports_rwsem);
 	return ctrl;
 
+out_module_put:
+	module_put(ops->module);
 out_unlock:
 	up_read(&nvmf_transports_rwsem);
 out_free_opts:

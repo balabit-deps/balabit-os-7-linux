@@ -126,7 +126,7 @@ config DELL_LAPTOP
 	depends on ACPI_VIDEO || ACPI_VIDEO = n
 	depends on RFKILL || RFKILL = n
 	depends on SERIO_I8042
-	select DELL_SMBIOS
+	depends on DELL_SMBIOS
 	select POWER_SUPPLY
 	select LEDS_CLASS
 	select NEW_LEDS
@@ -140,8 +140,8 @@ config DELL_WMI
 	depends on DMI
 	depends on INPUT
 	depends on ACPI_VIDEO || ACPI_VIDEO = n
+	depends on DELL_SMBIOS
 	select DELL_WMI_DESCRIPTOR
-	select DELL_SMBIOS
 	select INPUT_SPARSEKMAP
 	---help---
 	  Say Y here if you want to support WMI-based hotkeys on Dell laptops.
@@ -198,6 +198,20 @@ config DELL_RBTN
 
 	  To compile this driver as a module, choose M here: the module will
 	  be called dell-rbtn.
+
+config DELL_UART_BACKLIGHT
+	tristate "Dell AIO UART Backlight driver"
+	depends on SERIAL_8250
+	depends on ACPI
+	---help---
+	  Say Y here if you want to support Dell AIO UART backlight interface.
+	  The Dell AIO machines released after 2017 come with a UART interface
+	  to communicate with the backlight scalar board. This driver creates
+	  a standard backlight interface and talks to the scalar board through
+	  UART to adjust the AIO screen brightness.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called dell_uart_backlight.
 
 
 config FUJITSU_LAPTOP
@@ -949,7 +963,7 @@ config INTEL_IMR
 	  If you are running on a Galileo/Quark say Y here.
 
 config INTEL_PMC_CORE
-	bool "Intel PMC Core driver"
+	tristate "Intel PMC Core driver"
 	depends on PCI
 	---help---
 	  The Intel Platform Controller Hub for Intel Core SoCs provides access

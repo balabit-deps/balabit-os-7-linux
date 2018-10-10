@@ -129,6 +129,7 @@ static inline void arch_send_call_function_ipi_mask(const struct cpumask *mask)
 void cpu_disable_common(void);
 void native_smp_prepare_boot_cpu(void);
 void native_smp_prepare_cpus(unsigned int max_cpus);
+void calculate_max_logical_packages(void);
 void native_smp_cpus_done(unsigned int max_cpus);
 void common_cpu_up(unsigned int cpunum, struct task_struct *tidle);
 int native_cpu_up(unsigned int cpunum, struct task_struct *tidle);
@@ -170,7 +171,6 @@ static inline int wbinvd_on_all_cpus(void)
 	wbinvd();
 	return 0;
 }
-#define smp_num_siblings	1
 #endif /* CONFIG_SMP */
 
 extern unsigned disabled_cpus;

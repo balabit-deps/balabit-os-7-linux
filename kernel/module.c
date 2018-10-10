@@ -1472,7 +1472,8 @@ static ssize_t module_sect_show(struct module_attribute *mattr,
 {
 	struct module_sect_attr *sattr =
 		container_of(mattr, struct module_sect_attr, mattr);
-	return sprintf(buf, "0x%pK\n", (void *)sattr->address);
+	return sprintf(buf, "0x%px\n", kptr_restrict < 2 ?
+		       (void *)sattr->address : NULL);
 }
 
 static void free_sect_attrs(struct module_sect_attrs *sect_attrs)
@@ -2789,7 +2790,8 @@ static int module_sig_check(struct load_info *info, int flags)
 	}
 
 	/* Not having a signature is only an error if we're strict. */
-	if (err == -ENOKEY && !sig_enforce)
+	if (err == -ENOKEY && !sig_enforce &&
+	    !kernel_is_locked_down("Loading of unsigned modules"))
 		err = 0;
 
 	return err;
@@ -2862,6 +2864,15 @@ static int check_modinfo_livepatch(struct module *mod, struct load_info *info)
 	return 0;
 }
 #endif /* CONFIG_LIVEPATCH */
+
+static void check_modinfo_retpoline(struct module *mod, struct load_info *info)
+{
+	if (retpoline_module_ok(get_modinfo(info, "retpoline")))
+		return;
+
+	pr_warn("%s: loading module not compiled with retpoline compiler.\n",
+		mod->name);
+}
 
 /* Sets info->hdr and info->len. */
 static int copy_module_from_user(const void __user *umod, unsigned long len,
@@ -3028,6 +3039,8 @@ static int check_modinfo(struct module *mod, struct load_info *info, int flags)
 				mod->name);
 		add_taint_module(mod, TAINT_OOT_MODULE, LOCKDEP_STILL_OK);
 	}
+
+	check_modinfo_retpoline(mod, info);
 
 	if (get_modinfo(info, "staging")) {
 		add_taint_module(mod, TAINT_CRAP, LOCKDEP_STILL_OK);
@@ -3505,6 +3518,11 @@ static noinline int do_init_module(struct module *mod)
 	 * walking this with preempt disabled.  In all the failure paths, we
 	 * call synchronize_sched(), but we don't want to slow down the success
 	 * path, so use actual RCU here.
+	 * Note that module_alloc() on most architectures creates W+X page
+	 * mappings which won't be cleaned up until do_free_init() runs.  Any
+	 * code such as mark_rodata_ro() which depends on those mappings to
+	 * be cleaned up needs to sync with the queued work - ie
+	 * rcu_barrier_sched()
 	 */
 	call_rcu_sched(&freeinit->rcu, do_free_init);
 	mutex_unlock(&module_mutex);
@@ -4212,7 +4230,7 @@ static int modules_open(struct inode *inode, struct file *file)
 		m->private = kallsyms_show_value() ? NULL : (void *)8ul;
 	}
 
-	return 0;
+	return err;
 }
 
 static const struct file_operations proc_modules_operations = {

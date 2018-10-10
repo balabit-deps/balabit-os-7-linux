@@ -26,6 +26,7 @@
 #include <linux/cred.h>
 #include <linux/timekeeping.h>
 #include <linux/ctype.h>
+#include <linux/nospec.h>
 
 #define IS_FD_ARRAY(map) ((map)->map_type == BPF_MAP_TYPE_PROG_ARRAY || \
 			   (map)->map_type == BPF_MAP_TYPE_PERF_EVENT_ARRAY || \
@@ -96,17 +97,28 @@ static int check_uarg_tail_zero(void __user *uaddr,
 
 static struct bpf_map *find_and_alloc_map(union bpf_attr *attr)
 {
+	const struct bpf_map_ops *ops;
+	u32 type = attr->map_type;
 	struct bpf_map *map;
+	int err;
 
-	if (attr->map_type >= ARRAY_SIZE(bpf_map_types) ||
-	    !bpf_map_types[attr->map_type])
+	if (type >= ARRAY_SIZE(bpf_map_types))
+		return ERR_PTR(-EINVAL);
+	type = array_index_nospec(type, ARRAY_SIZE(bpf_map_types));
+	ops = bpf_map_types[type];
+	if (!ops)
 		return ERR_PTR(-EINVAL);
 
-	map = bpf_map_types[attr->map_type]->map_alloc(attr);
+	if (ops->map_alloc_check) {
+		err = ops->map_alloc_check(attr);
+		if (err)
+			return ERR_PTR(err);
+	}
+	map = ops->map_alloc(attr);
 	if (IS_ERR(map))
 		return map;
-	map->ops = bpf_map_types[attr->map_type];
-	map->map_type = attr->map_type;
+	map->ops = ops;
+	map->map_type = type;
 	return map;
 }
 
@@ -821,11 +833,17 @@ static const struct bpf_prog_ops * const bpf_prog_types[] = {
 
 static int find_prog_type(enum bpf_prog_type type, struct bpf_prog *prog)
 {
-	if (type >= ARRAY_SIZE(bpf_prog_types) || !bpf_prog_types[type])
+	const struct bpf_prog_ops *ops;
+
+	if (type >= ARRAY_SIZE(bpf_prog_types))
+		return -EINVAL;
+	type = array_index_nospec(type, ARRAY_SIZE(bpf_prog_types));
+	ops = bpf_prog_types[type];
+	if (!ops)
 		return -EINVAL;
 
 	if (!bpf_prog_is_dev_bound(prog->aux))
-		prog->aux->ops = bpf_prog_types[type];
+		prog->aux->ops = ops;
 	else
 		prog->aux->ops = &bpf_offload_prog_ops;
 	prog->type = type;
@@ -1687,7 +1705,7 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
 	union bpf_attr attr = {};
 	int err;
 
-	if (!capable(CAP_SYS_ADMIN) && sysctl_unprivileged_bpf_disabled)
+	if (sysctl_unprivileged_bpf_disabled && !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	err = check_uarg_tail_zero(uattr, sizeof(attr), size);

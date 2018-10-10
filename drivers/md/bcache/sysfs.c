@@ -195,7 +195,7 @@ STORE(__cached_dev)
 {
 	struct cached_dev *dc = container_of(kobj, struct cached_dev,
 					     disk.kobj);
-	ssize_t v = size;
+	ssize_t v;
 	struct cache_set *c;
 	struct kobj_uevent_env *env;
 
@@ -215,7 +215,9 @@ STORE(__cached_dev)
 	sysfs_strtoul_clamp(writeback_rate,
 			    dc->writeback_rate.rate, 1, INT_MAX);
 
-	d_strtoul_nonzero(writeback_rate_update_seconds);
+	sysfs_strtoul_clamp(writeback_rate_update_seconds,
+			    dc->writeback_rate_update_seconds,
+			    1, WRITEBACK_RATE_UPDATE_SECS_MAX);
 	d_strtoul(writeback_rate_i_term_inverse);
 	d_strtoul_nonzero(writeback_rate_p_term_inverse);
 
@@ -267,17 +269,20 @@ STORE(__cached_dev)
 	}
 
 	if (attr == &sysfs_attach) {
-		if (bch_parse_uuid(buf, dc->sb.set_uuid) < 16)
+		uint8_t		set_uuid[16];
+
+		if (bch_parse_uuid(buf, set_uuid) < 16)
 			return -EINVAL;
 
+		v = -ENOENT;
 		list_for_each_entry(c, &bch_cache_sets, list) {
-			v = bch_cached_dev_attach(dc, c);
+			v = bch_cached_dev_attach(dc, c, set_uuid);
 			if (!v)
 				return size;
 		}
 
 		pr_err("Can't attach %s: cache set not found", buf);
-		size = v;
+		return v;
 	}
 
 	if (attr == &sysfs_detach && dc->disk.c)
@@ -301,7 +306,8 @@ STORE(bch_cached_dev)
 		bch_writeback_queue(dc);
 
 	if (attr == &sysfs_writeback_percent)
-		schedule_delayed_work(&dc->writeback_rate_update,
+		if (!test_and_set_bit(BCACHE_DEV_WB_RUNNING, &dc->disk.flags))
+			schedule_delayed_work(&dc->writeback_rate_update,
 				      dc->writeback_rate_update_seconds * HZ);
 
 	mutex_unlock(&bch_register_lock);

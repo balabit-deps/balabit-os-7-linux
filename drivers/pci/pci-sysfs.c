@@ -168,6 +168,9 @@ static ssize_t max_link_speed_show(struct device *dev,
 		return -EINVAL;
 
 	switch (linkcap & PCI_EXP_LNKCAP_SLS) {
+	case PCI_EXP_LNKCAP_SLS_16_0GB:
+		speed = "16 GT/s";
+		break;
 	case PCI_EXP_LNKCAP_SLS_8_0GB:
 		speed = "8 GT/s";
 		break;
@@ -213,6 +216,9 @@ static ssize_t current_link_speed_show(struct device *dev,
 		return -EINVAL;
 
 	switch (linkstat & PCI_EXP_LNKSTA_CLS) {
+	case PCI_EXP_LNKSTA_CLS_16_0GB:
+		speed = "16 GT/s";
+		break;
 	case PCI_EXP_LNKSTA_CLS_8_0GB:
 		speed = "8 GT/s";
 		break;
@@ -919,6 +925,9 @@ static ssize_t pci_write_config(struct file *filp, struct kobject *kobj,
 	loff_t init_off = off;
 	u8 *data = (u8 *) buf;
 
+	if (kernel_is_locked_down("Direct PCI access"))
+		return -EPERM;
+
 	if (off > dev->cfg_size)
 		return 0;
 	if (off + count > dev->cfg_size) {
@@ -1213,6 +1222,9 @@ static int pci_mmap_resource(struct kobject *kobj, struct bin_attribute *attr,
 	enum pci_mmap_state mmap_type;
 	struct resource *res = &pdev->resource[bar];
 
+	if (kernel_is_locked_down("Direct PCI access"))
+		return -EPERM;
+
 	if (res->flags & IORESOURCE_MEM && iomem_is_exclusive(res->start))
 		return -EINVAL;
 
@@ -1293,6 +1305,9 @@ static ssize_t pci_write_resource_io(struct file *filp, struct kobject *kobj,
 				     struct bin_attribute *attr, char *buf,
 				     loff_t off, size_t count)
 {
+	if (kernel_is_locked_down("Direct PCI access"))
+		return -EPERM;
+
 	return pci_resource_io(filp, kobj, attr, buf, off, count, true);
 }
 

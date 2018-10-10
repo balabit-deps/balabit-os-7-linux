@@ -2,7 +2,7 @@
 /*
  * definition for kernel virtual machines on s390
  *
- * Copyright IBM Corp. 2008, 2009
+ * Copyright IBM Corp. 2008, 2018
  *
  *    Author(s): Carsten Otte <cotte@de.ibm.com>
  */
@@ -266,6 +266,7 @@ struct kvm_s390_sie_block {
 	__u8	reserved1c0[8];		/* 0x01c0 */
 #define ECD_HOSTREGMGMT	0x20000000
 #define ECD_MEF		0x08000000
+#define ECD_ETOKENF	0x02000000
 	__u32	ecd;			/* 0x01c8 */
 	__u8	reserved1cc[18];	/* 0x01cc */
 	__u64	pp;			/* 0x01de */
@@ -317,18 +318,30 @@ struct kvm_vcpu_stat {
 	u64 deliver_program_int;
 	u64 deliver_io_int;
 	u64 exit_wait_state;
+	u64 instruction_epsw;
+	u64 instruction_gs;
+	u64 instruction_io_other;
+	u64 instruction_lpsw;
+	u64 instruction_lpswe;
 	u64 instruction_pfmf;
+	u64 instruction_ptff;
+	u64 instruction_sck;
+	u64 instruction_sckpf;
 	u64 instruction_stidp;
 	u64 instruction_spx;
 	u64 instruction_stpx;
 	u64 instruction_stap;
-	u64 instruction_storage_key;
+	u64 instruction_iske;
+	u64 instruction_ri;
+	u64 instruction_rrbe;
+	u64 instruction_sske;
 	u64 instruction_ipte_interlock;
-	u64 instruction_stsch;
-	u64 instruction_chsc;
 	u64 instruction_stsi;
 	u64 instruction_stfl;
+	u64 instruction_tb;
+	u64 instruction_tpi;
 	u64 instruction_tprot;
+	u64 instruction_tsch;
 	u64 instruction_sie;
 	u64 instruction_essa;
 	u64 instruction_sthyi;
@@ -354,6 +367,7 @@ struct kvm_vcpu_stat {
 	u64 diagnose_258;
 	u64 diagnose_308;
 	u64 diagnose_500;
+	u64 diagnose_other;
 };
 
 #define PGM_OPERATION			0x01

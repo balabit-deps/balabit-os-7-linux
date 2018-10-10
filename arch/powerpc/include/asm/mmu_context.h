@@ -35,9 +35,9 @@ extern struct mm_iommu_table_group_mem_t *mm_iommu_lookup_rm(
 extern struct mm_iommu_table_group_mem_t *mm_iommu_find(struct mm_struct *mm,
 		unsigned long ua, unsigned long entries);
 extern long mm_iommu_ua_to_hpa(struct mm_iommu_table_group_mem_t *mem,
-		unsigned long ua, unsigned long *hpa);
+		unsigned long ua, unsigned int pageshift, unsigned long *hpa);
 extern long mm_iommu_ua_to_hpa_rm(struct mm_iommu_table_group_mem_t *mem,
-		unsigned long ua, unsigned long *hpa);
+		unsigned long ua, unsigned int pageshift, unsigned long *hpa);
 extern long mm_iommu_mapped_inc(struct mm_iommu_table_group_mem_t *mem);
 extern void mm_iommu_mapped_dec(struct mm_iommu_table_group_mem_t *mem);
 #endif
@@ -92,15 +92,23 @@ static inline void dec_mm_active_cpus(struct mm_struct *mm)
 static inline void mm_context_add_copro(struct mm_struct *mm)
 {
 	/*
-	 * On hash, should only be called once over the lifetime of
-	 * the context, as we can't decrement the active cpus count
-	 * and flush properly for the time being.
+	 * If any copro is in use, increment the active CPU count
+	 * in order to force TLB invalidations to be global as to
+	 * propagate to the Nest MMU.
 	 */
-	inc_mm_active_cpus(mm);
+	if (atomic_inc_return(&mm->context.copros) == 1)
+		inc_mm_active_cpus(mm);
 }
 
 static inline void mm_context_remove_copro(struct mm_struct *mm)
 {
+	int c;
+
+	c = atomic_dec_if_positive(&mm->context.copros);
+
+	/* Detect imbalance between add and remove */
+	WARN_ON(c < 0);
+
 	/*
 	 * Need to broadcast a global flush of the full mm before
 	 * decrementing active_cpus count, as the next TLBI may be
@@ -111,7 +119,7 @@ static inline void mm_context_remove_copro(struct mm_struct *mm)
 	 * for the time being. Invalidations will remain global if
 	 * used on hash.
 	 */
-	if (radix_enabled()) {
+	if (c == 0 && radix_enabled()) {
 		flush_all_mm(mm);
 		dec_mm_active_cpus(mm);
 	}

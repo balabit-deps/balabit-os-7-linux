@@ -704,7 +704,7 @@ static void i915_audio_component_codec_wake_override(struct device *kdev,
 	struct drm_i915_private *dev_priv = kdev_to_i915(kdev);
 	u32 tmp;
 
-	if (!IS_GEN9_BC(dev_priv))
+	if (!IS_GEN9(dev_priv))
 		return;
 
 	i915_audio_component_get_power(kdev);
@@ -754,11 +754,11 @@ static struct intel_encoder *get_saved_enc(struct drm_i915_private *dev_priv,
 {
 	struct intel_encoder *encoder;
 
-	if (WARN_ON(pipe >= INTEL_INFO(dev_priv)->num_pipes))
-		return NULL;
-
 	/* MST */
 	if (pipe >= 0) {
+		if (WARN_ON(pipe >= ARRAY_SIZE(dev_priv->av_enc_map)))
+			return NULL;
+
 		encoder = dev_priv->av_enc_map[pipe];
 		/*
 		 * when bootup, audio driver may not know it is

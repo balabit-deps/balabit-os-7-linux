@@ -641,7 +641,6 @@ static int wcn36xx_hw_scan(struct ieee80211_hw *hw,
 			   struct ieee80211_scan_request *hw_req)
 {
 	struct wcn36xx *wcn = hw->priv;
-
 	mutex_lock(&wcn->scan_lock);
 	if (wcn->scan_req) {
 		mutex_unlock(&wcn->scan_lock);
@@ -650,11 +649,16 @@ static int wcn36xx_hw_scan(struct ieee80211_hw *hw,
 
 	wcn->scan_aborted = false;
 	wcn->scan_req = &hw_req->req;
+
 	mutex_unlock(&wcn->scan_lock);
 
-	schedule_work(&wcn->scan_work);
+	if (!get_feat_caps(wcn->fw_feat_caps, SCAN_OFFLOAD)) {
+		/* legacy manual/sw scan */
+		schedule_work(&wcn->scan_work);
+		return 0;
+	}
 
-	return 0;
+	return wcn36xx_smd_start_hw_scan(wcn, vif, &hw_req->req);
 }
 
 static void wcn36xx_cancel_hw_scan(struct ieee80211_hw *hw,
@@ -665,6 +669,9 @@ static void wcn36xx_cancel_hw_scan(struct ieee80211_hw *hw,
 	mutex_lock(&wcn->scan_lock);
 	wcn->scan_aborted = true;
 	mutex_unlock(&wcn->scan_lock);
+
+	/* ieee80211_scan_completed will be called on FW scan indication */
+	wcn36xx_smd_stop_hw_scan(wcn);
 
 	cancel_work_sync(&wcn->scan_work);
 }
@@ -1258,6 +1265,14 @@ static int wcn36xx_probe(struct platform_device *pdev)
 	void *wcnss;
 	int ret;
 	const u8 *addr;
+#ifdef	CONFIG_WCN36XX_SNAPDRAGON_HACKS
+	int status;
+	const struct firmware *addr_file = NULL;
+	u8 tmp[18], _addr[ETH_ALEN];
+	static const u8 qcom_oui[3] = {0x00, 0x0A, 0xF5};
+	static const char *files = {"wlan/macaddr0"};
+#endif
+
 
 	wcn36xx_dbg(WCN36XX_DBG_MAC, "platform probe\n");
 
@@ -1291,7 +1306,35 @@ static int wcn36xx_probe(struct platform_device *pdev)
 		wcn36xx_err("invalid local-mac-address\n");
 		ret = -EINVAL;
 		goto out_wq;
-	} else if (addr) {
+	}
+#ifdef	CONFIG_WCN36XX_SNAPDRAGON_HACKS
+	else if (addr == NULL) {
+		addr = _addr;
+		status = request_firmware(&addr_file, files, &pdev->dev);
+
+		if (status < 0) {
+			/* Assign a random mac with Qualcomm oui */
+			dev_err(&pdev->dev, "Failed (%d) to read macaddress"
+			"file %s, using a random address instead", status, files);
+			memcpy(addr, qcom_oui, 3);
+			get_random_bytes(addr + 3, 3);
+		} else {
+			memset(tmp, 0, sizeof(tmp));
+			memcpy(tmp, addr_file->data, sizeof(tmp) - 1);
+			sscanf(tmp, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+			&addr[0],
+			&addr[1],
+			&addr[2],
+			&addr[3],
+			&addr[4],
+			&addr[5]);
+
+			release_firmware(addr_file);
+		}
+	}
+#endif
+
+	if (addr) {
 		wcn36xx_info("mac address: %pM\n", addr);
 		SET_IEEE80211_PERM_ADDR(wcn->hw, addr);
 	}

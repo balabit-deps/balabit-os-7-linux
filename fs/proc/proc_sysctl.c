@@ -707,7 +707,10 @@ static bool proc_sys_link_fill_cache(struct file *file,
 				    struct ctl_table *table)
 {
 	bool ret = true;
+
 	head = sysctl_head_grab(head);
+	if (IS_ERR(head))
+		return false;
 
 	if (S_ISLNK(table->mode)) {
 		/* It is not an error if we can not follow the link ignore it */
@@ -802,9 +805,16 @@ static int proc_sys_permission(struct inode *inode, int mask)
 static int proc_sys_setattr(struct dentry *dentry, struct iattr *attr)
 {
 	struct inode *inode = d_inode(dentry);
+	struct user_namespace *s_user_ns;
 	int error;
 
 	if (attr->ia_valid & (ATTR_MODE | ATTR_UID | ATTR_GID))
+		return -EPERM;
+
+	/* Don't let anyone mess with weird proc files */
+	s_user_ns = inode->i_sb->s_user_ns;
+	if (!kuid_has_mapping(s_user_ns, inode->i_uid) ||
+	    !kgid_has_mapping(s_user_ns, inode->i_gid))
 		return -EPERM;
 
 	error = setattr_prepare(dentry, attr);

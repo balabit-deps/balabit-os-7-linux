@@ -174,6 +174,7 @@ static int acm_wb_alloc(struct acm *acm)
 		wb = &acm->wb[wbn];
 		if (!wb->use) {
 			wb->use = 1;
+			wb->len = 0;
 			return wbn;
 		}
 		wbn = (wbn + 1) % ACM_NW;
@@ -425,7 +426,7 @@ static int acm_submit_read_urb(struct acm *acm, int index, gfp_t mem_flags)
 
 	res = usb_submit_urb(acm->read_urbs[index], mem_flags);
 	if (res) {
-		if (res != -EPERM) {
+		if (res != -EPERM && res != -ENODEV) {
 			dev_err(&acm->data->dev,
 				"urb %d failed submission with %d\n",
 				index, res);
@@ -805,16 +806,18 @@ static int acm_tty_write(struct tty_struct *tty,
 static void acm_tty_flush_chars(struct tty_struct *tty)
 {
 	struct acm *acm = tty->driver_data;
-	struct acm_wb *cur = acm->putbuffer;
+	struct acm_wb *cur;
 	int err;
 	unsigned long flags;
 
+	spin_lock_irqsave(&acm->write_lock, flags);
+
+	cur = acm->putbuffer;
 	if (!cur) /* nothing to do */
-		return;
+		goto out;
 
 	acm->putbuffer = NULL;
 	err = usb_autopm_get_interface_async(acm->control);
-	spin_lock_irqsave(&acm->write_lock, flags);
 	if (err < 0) {
 		cur->use = 0;
 		acm->putbuffer = cur;
@@ -1752,6 +1755,9 @@ static const struct usb_device_id acm_ids[] = {
 	{ USB_DEVICE(0x0ace, 0x1611), /* ZyDAS 56K USB MODEM - new version */
 	.driver_info = SINGLE_RX_URB, /* firmware bug */
 	},
+	{ USB_DEVICE(0x11ca, 0x0201), /* VeriFone Mx870 Gadget Serial */
+	.driver_info = SINGLE_RX_URB,
+	},
 	{ USB_DEVICE(0x22b8, 0x7000), /* Motorola Q Phone */
 	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
 	},
@@ -1919,6 +1925,20 @@ static const struct usb_device_id acm_ids[] = {
 	{ USB_DEVICE(0x058b, 0x0041),
 	.driver_info = IGNORE_DEVICE,
 	},
+
+	/* Exclude Exar USB serial ports */
+	{ USB_DEVICE(0x04e2, 0x1400), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1401), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1402), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1403), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1410), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1411), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1412), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1414), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1420), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1421), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1422), .driver_info = IGNORE_DEVICE, },
+	{ USB_DEVICE(0x04e2, 0x1424), .driver_info = IGNORE_DEVICE, },
 
 	/* control interfaces without any protocol set */
 	{ USB_INTERFACE_INFO(USB_CLASS_COMM, USB_CDC_SUBCLASS_ACM,

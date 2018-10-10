@@ -148,9 +148,6 @@ static int bnxt_tc_parse_actions(struct bnxt *bp,
 		}
 	}
 
-	if (rc)
-		return rc;
-
 	if (actions->flags & BNXT_TC_ACTION_FLAG_FWD) {
 		if (actions->flags & BNXT_TC_ACTION_FLAG_TUNNEL_ENCAP) {
 			/* dst_fid is PF's fid */
@@ -164,7 +161,7 @@ static int bnxt_tc_parse_actions(struct bnxt *bp,
 		}
 	}
 
-	return rc;
+	return 0;
 }
 
 #define GET_KEY(flow_cmd, key_type)					\
@@ -982,8 +979,10 @@ static int bnxt_tc_get_decap_handle(struct bnxt *bp, struct bnxt_tc_flow *flow,
 
 	/* Check if there's another flow using the same tunnel decap.
 	 * If not, add this tunnel to the table and resolve the other
-	 * tunnel header fileds
+	 * tunnel header fileds. Ignore src_port in the tunnel_key,
+	 * since it is not required for decap filters.
 	 */
+	decap_key->tp_src = 0;
 	decap_node = bnxt_tc_get_tunnel_node(bp, &tc_info->decap_table,
 					     &tc_info->decap_ht_params,
 					     decap_key);

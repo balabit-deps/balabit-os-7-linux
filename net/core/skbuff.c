@@ -857,6 +857,7 @@ static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb)
 	n->hdr_len = skb->nohdr ? skb_headroom(skb) : skb->hdr_len;
 	n->cloned = 1;
 	n->nohdr = 0;
+	n->peeked = 0;
 	n->destructor = NULL;
 	C(tail);
 	C(end);
@@ -4173,7 +4174,7 @@ int sock_queue_err_skb(struct sock *sk, struct sk_buff *skb)
 
 	skb_queue_tail(&sk->sk_error_queue, skb);
 	if (!sock_flag(sk, SOCK_DEAD))
-		sk->sk_data_ready(sk);
+		sk->sk_error_report(sk);
 	return 0;
 }
 EXPORT_SYMBOL(sock_queue_err_skb);
@@ -4910,6 +4911,45 @@ unsigned int skb_gso_transport_seglen(const struct sk_buff *skb)
 EXPORT_SYMBOL_GPL(skb_gso_transport_seglen);
 
 /**
+ * skb_gso_size_check - check the skb size, considering GSO_BY_FRAGS
+ *
+ * There are a couple of instances where we have a GSO skb, and we
+ * want to determine what size it would be after it is segmented.
+ *
+ * We might want to check:
+ * -    L3+L4+payload size (e.g. IP forwarding)
+ * - L2+L3+L4+payload size (e.g. sanity check before passing to driver)
+ *
+ * This is a helper to do that correctly considering GSO_BY_FRAGS.
+ *
+ * @seg_len: The segmented length (from skb_gso_*_seglen). In the
+ *           GSO_BY_FRAGS case this will be [header sizes + GSO_BY_FRAGS].
+ *
+ * @max_len: The maximum permissible length.
+ *
+ * Returns true if the segmented length <= max length.
+ */
+static inline bool skb_gso_size_check(const struct sk_buff *skb,
+				      unsigned int seg_len,
+				      unsigned int max_len) {
+	const struct skb_shared_info *shinfo = skb_shinfo(skb);
+	const struct sk_buff *iter;
+
+	if (shinfo->gso_size != GSO_BY_FRAGS)
+		return seg_len <= max_len;
+
+	/* Undo this so we can re-use header sizes */
+	seg_len -= GSO_BY_FRAGS;
+
+	skb_walk_frags(skb, iter) {
+		if (seg_len + skb_headlen(iter) > max_len)
+			return false;
+	}
+
+	return true;
+}
+
+/**
  * skb_gso_validate_mtu - Return in case such skb fits a given MTU
  *
  * @skb: GSO skb
@@ -4920,36 +4960,39 @@ EXPORT_SYMBOL_GPL(skb_gso_transport_seglen);
  */
 bool skb_gso_validate_mtu(const struct sk_buff *skb, unsigned int mtu)
 {
-	const struct skb_shared_info *shinfo = skb_shinfo(skb);
-	const struct sk_buff *iter;
-	unsigned int hlen;
-
-	hlen = skb_gso_network_seglen(skb);
-
-	if (shinfo->gso_size != GSO_BY_FRAGS)
-		return hlen <= mtu;
-
-	/* Undo this so we can re-use header sizes */
-	hlen -= GSO_BY_FRAGS;
-
-	skb_walk_frags(skb, iter) {
-		if (hlen + skb_headlen(iter) > mtu)
-			return false;
-	}
-
-	return true;
+	return skb_gso_size_check(skb, skb_gso_network_seglen(skb), mtu);
 }
 EXPORT_SYMBOL_GPL(skb_gso_validate_mtu);
 
+/**
+ * skb_gso_validate_mac_len - Will a split GSO skb fit in a given length?
+ *
+ * @skb: GSO skb
+ * @len: length to validate against
+ *
+ * skb_gso_validate_mac_len validates if a given skb will fit a wanted
+ * length once split, including L2, L3 and L4 headers and the payload.
+ */
+bool skb_gso_validate_mac_len(const struct sk_buff *skb, unsigned int len)
+{
+	return skb_gso_size_check(skb, skb_gso_mac_seglen(skb), len);
+}
+EXPORT_SYMBOL_GPL(skb_gso_validate_mac_len);
+
 static struct sk_buff *skb_reorder_vlan_header(struct sk_buff *skb)
 {
+	int mac_len;
+
 	if (skb_cow(skb, skb_headroom(skb)) < 0) {
 		kfree_skb(skb);
 		return NULL;
 	}
 
-	memmove(skb->data - ETH_HLEN, skb->data - skb->mac_len - VLAN_HLEN,
-		2 * ETH_ALEN);
+	mac_len = skb->data - skb_mac_header(skb);
+	if (likely(mac_len > VLAN_HLEN + ETH_TLEN)) {
+		memmove(skb_mac_header(skb) + VLAN_HLEN, skb_mac_header(skb),
+			mac_len - VLAN_HLEN - ETH_TLEN);
+	}
 	skb->mac_header += VLAN_HLEN;
 	return skb;
 }

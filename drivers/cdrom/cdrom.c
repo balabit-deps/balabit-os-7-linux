@@ -289,7 +289,7 @@ static bool debug;
 /* default compatibility mode */
 static bool autoclose=1;
 static bool autoeject;
-static bool lockdoor = 1;
+static bool lockdoor = 0;
 /* will we ever get to use this... sigh. */
 static bool check_media_type;
 /* automatically restart mrw format */
@@ -1151,9 +1151,6 @@ int cdrom_open(struct cdrom_device_info *cdi, struct block_device *bdev,
 	int ret;
 
 	cd_dbg(CD_OPEN, "entering cdrom_open\n");
-
-	/* open is event synchronization point, check events first */
-	check_disk_change(bdev);
 
 	/* if this was a O_NONBLOCK open and we should honor the flags,
 	 * do a quick open without drive/disc integrity checks. */
@@ -2374,7 +2371,7 @@ static int cdrom_ioctl_media_changed(struct cdrom_device_info *cdi,
 	if (!CDROM_CAN(CDC_SELECT_DISC) || arg == CDSL_CURRENT)
 		return media_changed(cdi, 1);
 
-	if ((unsigned int)arg >= cdi->capacity)
+	if (arg >= cdi->capacity)
 		return -EINVAL;
 
 	info = kmalloc(sizeof(*info), GFP_KERNEL);

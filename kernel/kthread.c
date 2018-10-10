@@ -55,7 +55,6 @@ enum KTHREAD_BITS {
 	KTHREAD_IS_PER_CPU = 0,
 	KTHREAD_SHOULD_STOP,
 	KTHREAD_SHOULD_PARK,
-	KTHREAD_IS_PARKED,
 };
 
 static inline void set_kthread_struct(void *kthread)
@@ -177,14 +176,12 @@ void *kthread_probe_data(struct task_struct *task)
 
 static void __kthread_parkme(struct kthread *self)
 {
-	__set_current_state(TASK_PARKED);
-	while (test_bit(KTHREAD_SHOULD_PARK, &self->flags)) {
-		if (!test_and_set_bit(KTHREAD_IS_PARKED, &self->flags))
-			complete(&self->parked);
+	for (;;) {
+		set_current_state(TASK_PARKED);
+		if (!test_bit(KTHREAD_SHOULD_PARK, &self->flags))
+			break;
 		schedule();
-		__set_current_state(TASK_PARKED);
 	}
-	clear_bit(KTHREAD_IS_PARKED, &self->flags);
 	__set_current_state(TASK_RUNNING);
 }
 
@@ -193,6 +190,11 @@ void kthread_parkme(void)
 	__kthread_parkme(to_kthread(current));
 }
 EXPORT_SYMBOL_GPL(kthread_parkme);
+
+void kthread_park_complete(struct task_struct *k)
+{
+	complete(&to_kthread(k)->parked);
+}
 
 static int kthread(void *_create)
 {
@@ -301,6 +303,17 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 	 * new kernel thread.
 	 */
 	if (unlikely(wait_for_completion_killable(&done))) {
+		int i = 0;
+
+		/*
+		 * I got SIGKILL, but wait for 10 more seconds for completion
+		 * unless chosen by the OOM killer. This delay is there as a
+		 * workaround for boot failure caused by SIGKILL upon device
+		 * driver initialization timeout.
+		 */
+		while (i++ < 10 && !test_tsk_thread_flag(current, TIF_MEMDIE))
+			if (wait_for_completion_timeout(&done, HZ))
+				goto ready;
 		/*
 		 * If I was SIGKILLed before kthreadd (or new kernel thread)
 		 * calls complete(), leave the cleanup of this structure to
@@ -314,6 +327,7 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 		 */
 		wait_for_completion(&done);
 	}
+ready:
 	task = create->result;
 	if (!IS_ERR(task)) {
 		static const struct sched_param param = { .sched_priority = 0 };
@@ -450,22 +464,15 @@ void kthread_unpark(struct task_struct *k)
 {
 	struct kthread *kthread = to_kthread(k);
 
-	clear_bit(KTHREAD_SHOULD_PARK, &kthread->flags);
 	/*
-	 * We clear the IS_PARKED bit here as we don't wait
-	 * until the task has left the park code. So if we'd
-	 * park before that happens we'd see the IS_PARKED bit
-	 * which might be about to be cleared.
+	 * Newly created kthread was parked when the CPU was offline.
+	 * The binding was lost and we need to set it again.
 	 */
-	if (test_and_clear_bit(KTHREAD_IS_PARKED, &kthread->flags)) {
-		/*
-		 * Newly created kthread was parked when the CPU was offline.
-		 * The binding was lost and we need to set it again.
-		 */
-		if (test_bit(KTHREAD_IS_PER_CPU, &kthread->flags))
-			__kthread_bind(k, kthread->cpu, TASK_PARKED);
-		wake_up_state(k, TASK_PARKED);
-	}
+	if (test_bit(KTHREAD_IS_PER_CPU, &kthread->flags))
+		__kthread_bind(k, kthread->cpu, TASK_PARKED);
+
+	clear_bit(KTHREAD_SHOULD_PARK, &kthread->flags);
+	wake_up_state(k, TASK_PARKED);
 }
 EXPORT_SYMBOL_GPL(kthread_unpark);
 
@@ -488,12 +495,13 @@ int kthread_park(struct task_struct *k)
 	if (WARN_ON(k->flags & PF_EXITING))
 		return -ENOSYS;
 
-	if (!test_bit(KTHREAD_IS_PARKED, &kthread->flags)) {
-		set_bit(KTHREAD_SHOULD_PARK, &kthread->flags);
-		if (k != current) {
-			wake_up_process(k);
-			wait_for_completion(&kthread->parked);
-		}
+	if (WARN_ON_ONCE(test_bit(KTHREAD_SHOULD_PARK, &kthread->flags)))
+		return -EBUSY;
+
+	set_bit(KTHREAD_SHOULD_PARK, &kthread->flags);
+	if (k != current) {
+		wake_up_process(k);
+		wait_for_completion(&kthread->parked);
 	}
 
 	return 0;

@@ -450,7 +450,7 @@ s32 e1000e_check_for_copper_link(struct e1000_hw *hw)
 	 * we have already determined whether we have link or not.
 	 */
 	if (!mac->autoneg)
-		return -E1000_ERR_CONFIG;
+		return 1;
 
 	/* Auto-Neg is enabled.  Auto Speed Detection takes care
 	 * of MAC speed/duplex configuration.  So we only need to
@@ -820,7 +820,7 @@ static s32 e1000_poll_fiber_serdes_link_generic(struct e1000_hw *hw)
 	 * milliseconds even if the other end is doing it in SW).
 	 */
 	for (i = 0; i < FIBER_LINK_UP_LIMIT; i++) {
-		usleep_range(10000, 20000);
+		usleep_range(10000, 11000);
 		status = er32(STATUS);
 		if (status & E1000_STATUS_LU)
 			break;

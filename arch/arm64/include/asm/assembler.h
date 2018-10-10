@@ -25,8 +25,8 @@
 
 #include <asm/asm-offsets.h>
 #include <asm/cpufeature.h>
+#include <asm/cputype.h>
 #include <asm/debug-monitors.h>
-#include <asm/mmu_context.h>
 #include <asm/page.h>
 #include <asm/pgtable-hwdef.h>
 #include <asm/ptrace.h>
@@ -107,6 +107,31 @@
  */
 	.macro	smp_dmb, opt
 	dmb	\opt
+	.endm
+
+/*
+ * RAS Error Synchronization barrier
+ */
+	.macro  esb
+	hint    #16
+	.endm
+
+/*
+ * Value prediction barrier
+ */
+	.macro	csdb
+	hint	#20
+	.endm
+
+/*
+ * Sanitise a 64-bit bounded index wrt speculation, returning zero if out
+ * of bounds.
+ */
+	.macro	mask_nospec64, idx, limit, tmp
+	sub	\tmp, \idx, \limit
+	bic	\tmp, \tmp, \idx
+	and	\idx, \idx, \tmp, asr #63
+	csdb
 	.endm
 
 /*
@@ -255,7 +280,11 @@ lr	.req	x30		// link register
 #else
 	adr_l	\dst, \sym
 #endif
+alternative_if_not ARM64_HAS_VIRT_HOST_EXTN
 	mrs	\tmp, tpidr_el1
+alternative_else
+	mrs	\tmp, tpidr_el2
+alternative_endif
 	add	\dst, \dst, \tmp
 	.endm
 
@@ -266,7 +295,11 @@ lr	.req	x30		// link register
 	 */
 	.macro ldr_this_cpu dst, sym, tmp
 	adr_l	\dst, \sym
+alternative_if_not ARM64_HAS_VIRT_HOST_EXTN
 	mrs	\tmp, tpidr_el1
+alternative_else
+	mrs	\tmp, tpidr_el2
+alternative_endif
 	ldr	\dst, [\dst, \tmp]
 	.endm
 
@@ -477,39 +510,8 @@ alternative_endif
 	mrs	\rd, sp_el0
 	.endm
 
-/*
- * Errata workaround prior to TTBR0_EL1 update
- *
- * 	val:	TTBR value with new BADDR, preserved
- * 	tmp0:	temporary register, clobbered
- * 	tmp1:	other temporary register, clobbered
- */
-	.macro	pre_ttbr0_update_workaround, val, tmp0, tmp1
-#ifdef CONFIG_QCOM_FALKOR_ERRATUM_1003
-alternative_if ARM64_WORKAROUND_QCOM_FALKOR_E1003
-	mrs	\tmp0, ttbr0_el1
-	mov	\tmp1, #FALKOR_RESERVED_ASID
-	bfi	\tmp0, \tmp1, #48, #16		// reserved ASID + old BADDR
-	msr	ttbr0_el1, \tmp0
-	isb
-	bfi	\tmp0, \val, #0, #48		// reserved ASID + new BADDR
-	msr	ttbr0_el1, \tmp0
-	isb
-alternative_else_nop_endif
-#endif
-	.endm
-
-/*
- * Errata workaround post TTBR0_EL1 update.
- */
-	.macro	post_ttbr0_update_workaround
-#ifdef CONFIG_CAVIUM_ERRATUM_27456
-alternative_if ARM64_WORKAROUND_CAVIUM_27456
-	ic	iallu
-	dsb	nsh
-	isb
-alternative_else_nop_endif
-#endif
+	.macro	pte_to_phys, phys, pte
+	and	\phys, \pte, #(((1 << (48 - PAGE_SHIFT)) - 1) << PAGE_SHIFT)
 	.endm
 
 /**
@@ -520,6 +522,45 @@ alternative_else_nop_endif
 #ifdef CONFIG_QCOM_FALKOR_ERRATUM_E1041
 	isb
 #endif
+	.endm
+
+/*
+ * Check the MIDR_EL1 of the current CPU for a given model and a range of
+ * variant/revision. See asm/cputype.h for the macros used below.
+ *
+ *	model:		MIDR_CPU_MODEL of CPU
+ *	rv_min:		Minimum of MIDR_CPU_VAR_REV()
+ *	rv_max:		Maximum of MIDR_CPU_VAR_REV()
+ *	res:		Result register.
+ *	tmp1, tmp2, tmp3: Temporary registers
+ *
+ * Corrupts: res, tmp1, tmp2, tmp3
+ * Returns:  0, if the CPU id doesn't match. Non-zero otherwise
+ */
+	.macro	cpu_midr_match model, rv_min, rv_max, res, tmp1, tmp2, tmp3
+	mrs		\res, midr_el1
+	mov_q		\tmp1, (MIDR_REVISION_MASK | MIDR_VARIANT_MASK)
+	mov_q		\tmp2, MIDR_CPU_MODEL_MASK
+	and		\tmp3, \res, \tmp2	// Extract model
+	and		\tmp1, \res, \tmp1	// rev & variant
+	mov_q		\tmp2, \model
+	cmp		\tmp3, \tmp2
+	cset		\res, eq
+	cbz		\res, .Ldone\@		// Model matches ?
+
+	.if (\rv_min != 0)			// Skip min check if rv_min == 0
+	mov_q		\tmp3, \rv_min
+	cmp		\tmp1, \tmp3
+	cset		\res, ge
+	.endif					// \rv_min != 0
+	/* Skip rv_max check if rv_min == rv_max && rv_min != 0 */
+	.if ((\rv_min != \rv_max) || \rv_min == 0)
+	mov_q		\tmp2, \rv_max
+	cmp		\tmp1, \tmp2
+	cset		\tmp2, le
+	and		\res, \res, \tmp2
+	.endif
+.Ldone\@:
 	.endm
 
 #endif	/* __ASM_ASSEMBLER_H */

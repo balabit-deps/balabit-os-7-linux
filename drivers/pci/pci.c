@@ -21,6 +21,7 @@
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/log2.h>
+#include <linux/logic_pio.h>
 #include <linux/pci-aspm.h>
 #include <linux/pm_wakeup.h>
 #include <linux/interrupt.h>
@@ -1112,12 +1113,12 @@ int pci_save_state(struct pci_dev *dev)
 EXPORT_SYMBOL(pci_save_state);
 
 static void pci_restore_config_dword(struct pci_dev *pdev, int offset,
-				     u32 saved_val, int retry)
+				     u32 saved_val, int retry, bool force)
 {
 	u32 val;
 
 	pci_read_config_dword(pdev, offset, &val);
-	if (val == saved_val)
+	if (!force && val == saved_val)
 		return;
 
 	for (;;) {
@@ -1136,25 +1137,36 @@ static void pci_restore_config_dword(struct pci_dev *pdev, int offset,
 }
 
 static void pci_restore_config_space_range(struct pci_dev *pdev,
-					   int start, int end, int retry)
+					   int start, int end, int retry,
+					   bool force)
 {
 	int index;
 
 	for (index = end; index >= start; index--)
 		pci_restore_config_dword(pdev, 4 * index,
 					 pdev->saved_config_space[index],
-					 retry);
+					 retry, force);
 }
 
 static void pci_restore_config_space(struct pci_dev *pdev)
 {
 	if (pdev->hdr_type == PCI_HEADER_TYPE_NORMAL) {
-		pci_restore_config_space_range(pdev, 10, 15, 0);
+		pci_restore_config_space_range(pdev, 10, 15, 0, false);
 		/* Restore BARs before the command register. */
-		pci_restore_config_space_range(pdev, 4, 9, 10);
-		pci_restore_config_space_range(pdev, 0, 3, 0);
+		pci_restore_config_space_range(pdev, 4, 9, 10, false);
+		pci_restore_config_space_range(pdev, 0, 3, 0, false);
+	} else if (pdev->hdr_type == PCI_HEADER_TYPE_BRIDGE) {
+		pci_restore_config_space_range(pdev, 12, 15, 0, false);
+
+		/*
+		 * Force rewriting of prefetch registers to avoid S3 resume
+		 * issues on Intel PCI bridges that occur when these
+		 * registers are not explicitly written.
+		 */
+		pci_restore_config_space_range(pdev, 9, 11, 0, true);
+		pci_restore_config_space_range(pdev, 0, 8, 0, false);
 	} else {
-		pci_restore_config_space_range(pdev, 0, 15, 0);
+		pci_restore_config_space_range(pdev, 0, 15, 0, false);
 	}
 }
 
@@ -1458,6 +1470,7 @@ struct pci_devres {
 	unsigned int pinned:1;
 	unsigned int orig_intx:1;
 	unsigned int restore_intx:1;
+	unsigned int mwi:1;
 	u32 region_mask;
 };
 
@@ -1475,6 +1488,9 @@ static void pcim_release(struct device *gendev, void *res)
 	for (i = 0; i < DEVICE_COUNT_RESOURCE; i++)
 		if (this->region_mask & (1 << i))
 			pci_release_region(dev, i);
+
+	if (this->mwi)
+		pci_clear_mwi(dev);
 
 	if (this->restore_intx)
 		pci_intx(dev, this->orig_intx);
@@ -1892,7 +1908,7 @@ void pci_pme_active(struct pci_dev *dev, bool enable)
 EXPORT_SYMBOL(pci_pme_active);
 
 /**
- * pci_enable_wake - enable PCI device as wakeup event source
+ * __pci_enable_wake - enable PCI device as wakeup event source
  * @dev: PCI device affected
  * @state: PCI state from which device will issue wakeup events
  * @enable: True to enable event generation; false to disable
@@ -1910,7 +1926,7 @@ EXPORT_SYMBOL(pci_pme_active);
  * Error code depending on the platform is returned if both the platform and
  * the native mechanism fail to enable the generation of wake-up events
  */
-int pci_enable_wake(struct pci_dev *dev, pci_power_t state, bool enable)
+static int __pci_enable_wake(struct pci_dev *dev, pci_power_t state, bool enable)
 {
 	int ret = 0;
 
@@ -1951,6 +1967,23 @@ int pci_enable_wake(struct pci_dev *dev, pci_power_t state, bool enable)
 
 	return ret;
 }
+
+/**
+ * pci_enable_wake - change wakeup settings for a PCI device
+ * @pci_dev: Target device
+ * @state: PCI state from which device will issue wakeup events
+ * @enable: Whether or not to enable event generation
+ *
+ * If @enable is set, check device_may_wakeup() for the device before calling
+ * __pci_enable_wake() for it.
+ */
+int pci_enable_wake(struct pci_dev *pci_dev, pci_power_t state, bool enable)
+{
+	if (enable && !device_may_wakeup(&pci_dev->dev))
+		return -EINVAL;
+
+	return __pci_enable_wake(pci_dev, state, enable);
+}
 EXPORT_SYMBOL(pci_enable_wake);
 
 /**
@@ -1963,9 +1996,9 @@ EXPORT_SYMBOL(pci_enable_wake);
  * should not be called twice in a row to enable wake-up due to PCI PM vs ACPI
  * ordering constraints.
  *
- * This function only returns error code if the device is not capable of
- * generating PME# from both D3_hot and D3_cold, and the platform is unable to
- * enable wake-up power for it.
+ * This function only returns error code if the device is not allowed to wake
+ * up the system from sleep or it is not capable of generating PME# from both
+ * D3_hot and D3_cold and the platform is unable to enable wake-up power for it.
  */
 int pci_wake_from_d3(struct pci_dev *dev, bool enable)
 {
@@ -2096,7 +2129,7 @@ int pci_finish_runtime_suspend(struct pci_dev *dev)
 
 	dev->runtime_d3cold = target_state == PCI_D3cold;
 
-	pci_enable_wake(dev, target_state, pci_dev_run_wake(dev));
+	__pci_enable_wake(dev, target_state, pci_dev_run_wake(dev));
 
 	error = pci_set_power_state(dev, target_state);
 
@@ -2120,15 +2153,15 @@ bool pci_dev_run_wake(struct pci_dev *dev)
 {
 	struct pci_bus *bus = dev->bus;
 
-	if (device_can_wakeup(&dev->dev))
-		return true;
-
 	if (!dev->pme_support)
 		return false;
 
 	/* PME-capable in principle, but not from the target power state */
-	if (!pci_pme_capable(dev, pci_target_state(dev, false)))
+	if (!pci_pme_capable(dev, pci_target_state(dev, true)))
 		return false;
+
+	if (device_can_wakeup(&dev->dev))
+		return true;
 
 	while (bus->parent) {
 		struct pci_dev *bridge = bus->self;
@@ -3364,68 +3397,35 @@ int pci_request_regions_exclusive(struct pci_dev *pdev, const char *res_name)
 }
 EXPORT_SYMBOL(pci_request_regions_exclusive);
 
-#ifdef PCI_IOBASE
-struct io_range {
-	struct list_head list;
-	phys_addr_t start;
-	resource_size_t size;
-};
-
-static LIST_HEAD(io_range_list);
-static DEFINE_SPINLOCK(io_range_lock);
-#endif
-
 /*
  * Record the PCI IO range (expressed as CPU physical address + size).
  * Return a negative value if an error has occured, zero otherwise
  */
-int __weak pci_register_io_range(phys_addr_t addr, resource_size_t size)
+int pci_register_io_range(struct fwnode_handle *fwnode, phys_addr_t addr,
+			resource_size_t	size)
 {
-	int err = 0;
-
+	int ret = 0;
 #ifdef PCI_IOBASE
-	struct io_range *range;
-	resource_size_t allocated_size = 0;
+	struct logic_pio_hwaddr *range;
 
-	/* check if the range hasn't been previously recorded */
-	spin_lock(&io_range_lock);
-	list_for_each_entry(range, &io_range_list, list) {
-		if (addr >= range->start && addr + size <= range->start + size) {
-			/* range already registered, bail out */
-			goto end_register;
-		}
-		allocated_size += range->size;
-	}
+	if (!size || addr + size < addr)
+		return -EINVAL;
 
-	/* range not registed yet, check for available space */
-	if (allocated_size + size - 1 > IO_SPACE_LIMIT) {
-		/* if it's too big check if 64K space can be reserved */
-		if (allocated_size + SZ_64K - 1 > IO_SPACE_LIMIT) {
-			err = -E2BIG;
-			goto end_register;
-		}
-
-		size = SZ_64K;
-		pr_warn("Requested IO range too big, new size set to 64K\n");
-	}
-
-	/* add the range to the list */
 	range = kzalloc(sizeof(*range), GFP_ATOMIC);
-	if (!range) {
-		err = -ENOMEM;
-		goto end_register;
-	}
+	if (!range)
+		return -ENOMEM;
 
-	range->start = addr;
+	range->fwnode = fwnode;
 	range->size = size;
+	range->hw_start = addr;
+	range->flags = LOGIC_PIO_CPU_MMIO;
 
-	list_add_tail(&range->list, &io_range_list);
-
-end_register:
-	spin_unlock(&io_range_lock);
+	ret = logic_pio_register_range(range);
+	if (ret)
+		kfree(range);
 #endif
 
-	return err;
+	return ret;
 }
 
 phys_addr_t pci_pio_to_address(unsigned long pio)
@@ -3433,21 +3433,10 @@ phys_addr_t pci_pio_to_address(unsigned long pio)
 	phys_addr_t address = (phys_addr_t)OF_BAD_ADDR;
 
 #ifdef PCI_IOBASE
-	struct io_range *range;
-	resource_size_t allocated_size = 0;
-
-	if (pio > IO_SPACE_LIMIT)
+	if (pio >= MMIO_UPPER_LIMIT)
 		return address;
 
-	spin_lock(&io_range_lock);
-	list_for_each_entry(range, &io_range_list, list) {
-		if (pio >= allocated_size && pio < allocated_size + range->size) {
-			address = range->start + pio - allocated_size;
-			break;
-		}
-		allocated_size += range->size;
-	}
-	spin_unlock(&io_range_lock);
+	address = logic_pio_to_hwaddr(pio);
 #endif
 
 	return address;
@@ -3456,21 +3445,7 @@ phys_addr_t pci_pio_to_address(unsigned long pio)
 unsigned long __weak pci_address_to_pio(phys_addr_t address)
 {
 #ifdef PCI_IOBASE
-	struct io_range *res;
-	resource_size_t offset = 0;
-	unsigned long addr = -1;
-
-	spin_lock(&io_range_lock);
-	list_for_each_entry(res, &io_range_list, list) {
-		if (address >= res->start && address < res->start + res->size) {
-			addr = address - res->start + offset;
-			break;
-		}
-		offset += res->size;
-	}
-	spin_unlock(&io_range_lock);
-
-	return addr;
+	return logic_pio_trans_cpuaddr(address);
 #else
 	if (address > IO_SPACE_LIMIT)
 		return (unsigned long)-1;
@@ -3759,6 +3734,27 @@ int pci_set_mwi(struct pci_dev *dev)
 #endif
 }
 EXPORT_SYMBOL(pci_set_mwi);
+
+/**
+ * pcim_set_mwi - a device-managed pci_set_mwi()
+ * @dev: the PCI device for which MWI is enabled
+ *
+ * Managed pci_set_mwi().
+ *
+ * RETURNS: An appropriate -ERRNO error value on error, or zero for success.
+ */
+int pcim_set_mwi(struct pci_dev *dev)
+{
+	struct pci_devres *dr;
+
+	dr = find_pci_dr(dev);
+	if (!dr)
+		return -ENOMEM;
+
+	dr->mwi = 1;
+	return pci_set_mwi(dev);
+}
+EXPORT_SYMBOL(pcim_set_mwi);
 
 /**
  * pci_try_set_mwi - enables memory-write-invalidate PCI transaction
