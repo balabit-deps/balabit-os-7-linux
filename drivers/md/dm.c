@@ -60,13 +60,13 @@ void dm_issue_global_event(void)
 }
 
 /*
- * One of these is allocated per bio.
+ * One of these is allocated per original bio.
  */
 struct dm_io {
 	struct mapped_device *md;
 	blk_status_t status;
 	atomic_t io_count;
-	struct bio *bio;
+	struct bio *orig_bio;
 	unsigned long start_time;
 	spinlock_t endio_lock;
 	struct dm_stats_aux stats_aux;
@@ -510,7 +510,7 @@ int md_in_flight(struct mapped_device *md)
 static void start_io_acct(struct dm_io *io)
 {
 	struct mapped_device *md = io->md;
-	struct bio *bio = io->bio;
+	struct bio *bio = io->orig_bio;
 	int cpu;
 	int rw = bio_data_dir(bio);
 
@@ -531,7 +531,7 @@ static void start_io_acct(struct dm_io *io)
 static void end_io_acct(struct dm_io *io)
 {
 	struct mapped_device *md = io->md;
-	struct bio *bio = io->bio;
+	struct bio *bio = io->orig_bio;
 	unsigned long duration = jiffies - io->start_time;
 	int pending;
 	int rw = bio_data_dir(bio);
@@ -780,8 +780,7 @@ static void dec_pending(struct dm_io *io, blk_status_t error)
 	/* Push-back supersedes any I/O errors */
 	if (unlikely(error)) {
 		spin_lock_irqsave(&io->endio_lock, flags);
-		if (!(io->status == BLK_STS_DM_REQUEUE &&
-				__noflush_suspending(md)))
+		if (!(io->status == BLK_STS_DM_REQUEUE && __noflush_suspending(md)))
 			io->status = error;
 		spin_unlock_irqrestore(&io->endio_lock, flags);
 	}
@@ -793,7 +792,8 @@ static void dec_pending(struct dm_io *io, blk_status_t error)
 			 */
 			spin_lock_irqsave(&md->deferred_lock, flags);
 			if (__noflush_suspending(md))
-				bio_list_add_head(&md->deferred, io->bio);
+				/* NOTE early return due to BLK_STS_DM_REQUEUE below */
+				bio_list_add_head(&md->deferred, io->orig_bio);
 			else
 				/* noflush suspend was interrupted. */
 				io->status = BLK_STS_IOERR;
@@ -801,7 +801,7 @@ static void dec_pending(struct dm_io *io, blk_status_t error)
 		}
 
 		io_error = io->status;
-		bio = io->bio;
+		bio = io->orig_bio;
 		end_io_acct(io);
 		free_io(md, io);
 
@@ -963,8 +963,7 @@ static long dm_dax_direct_access(struct dax_device *dax_dev, pgoff_t pgoff,
 	if (len < 1)
 		goto out;
 	nr_pages = min(len, nr_pages);
-	if (ti->type->direct_access)
-		ret = ti->type->direct_access(ti, pgoff, nr_pages, kaddr, pfn);
+	ret = ti->type->direct_access(ti, pgoff, nr_pages, kaddr, pfn);
 
  out:
 	dm_put_live_table(md, srcu_idx);
@@ -1048,7 +1047,7 @@ void dm_remap_zone_report(struct dm_target *ti, struct bio *bio, sector_t start)
 {
 #ifdef CONFIG_BLK_DEV_ZONED
 	struct dm_target_io *tio = container_of(bio, struct dm_target_io, clone);
-	struct bio *report_bio = tio->io->bio;
+	struct bio *report_bio = tio->io->orig_bio;
 	struct blk_zone_report_hdr *hdr = NULL;
 	struct blk_zone *zone;
 	unsigned int nr_rep = 0;
@@ -1197,7 +1196,7 @@ static void __map_bio(struct dm_target_io *tio)
 	case DM_MAPIO_REMAPPED:
 		/* the bio has been remapped so dispatch it */
 		trace_block_bio_remap(clone->bi_disk->queue, clone,
-				      bio_dev(tio->io->bio), sector);
+				      bio_dev(tio->io->orig_bio), sector);
 		generic_make_request(clone);
 		break;
 	case DM_MAPIO_KILL:
@@ -1480,7 +1479,7 @@ static void __split_and_process_bio(struct mapped_device *md,
 	ci.io = alloc_io(md);
 	ci.io->status = 0;
 	atomic_set(&ci.io->io_count, 1);
-	ci.io->bio = bio;
+	ci.io->orig_bio = bio;
 	ci.io->md = md;
 	spin_lock_init(&ci.io->endio_lock);
 	ci.sector = bio->bi_iter.bi_sector;
@@ -1499,8 +1498,28 @@ static void __split_and_process_bio(struct mapped_device *md,
 	} else {
 		ci.bio = bio;
 		ci.sector_count = bio_sectors(bio);
-		while (ci.sector_count && !error)
+		while (ci.sector_count && !error) {
 			error = __split_and_process_non_flush(&ci);
+			if (current->bio_list && ci.sector_count && !error) {
+				/*
+				 * Remainder must be passed to generic_make_request()
+				 * so that it gets handled *after* bios already submitted
+				 * have been completely processed.
+				 * We take a clone of the original to store in
+				 * ci.io->orig_bio to be used by end_io_acct() and
+				 * for dec_pending to use for completion handling.
+				 * As this path is not used for REQ_OP_ZONE_REPORT,
+				 * the usage of io->orig_bio in dm_remap_zone_report()
+				 * won't be affected by this reassignment.
+				 */
+				struct bio *b = bio_split(bio, bio_sectors(bio) - ci.sector_count,
+							  GFP_NOIO, md->queue->bio_split);
+				ci.io->orig_bio = b;
+				bio_chain(b, bio);
+				generic_make_request(bio);
+				break;
+			}
+		}
 	}
 
 	/* drop the extra reference count */
@@ -1511,8 +1530,8 @@ static void __split_and_process_bio(struct mapped_device *md,
  *---------------------------------------------------------------*/
 
 /*
- * The request function that just remaps the bio built up by
- * dm_merge_bvec.
+ * The request function that remaps the bio to one target and
+ * splits off any remainder.
  */
 static blk_qc_t dm_make_request(struct request_queue *q, struct bio *bio)
 {
@@ -2035,15 +2054,6 @@ int dm_setup_md_queue(struct mapped_device *md, struct dm_table *t)
 	case DM_TYPE_DAX_BIO_BASED:
 		dm_init_normal_md_queue(md);
 		blk_queue_make_request(md->queue, dm_make_request);
-		/*
-		 * DM handles splitting bios as needed.  Free the bio_split bioset
-		 * since it won't be used (saves 1 process per bio-based DM device).
-		 */
-		bioset_free(md->queue->bio_split);
-		md->queue->bio_split = NULL;
-
-		if (type == DM_TYPE_DAX_BIO_BASED)
-			queue_flag_set_unlocked(QUEUE_FLAG_DAX, md->queue);
 		break;
 	case DM_TYPE_NONE:
 		WARN_ON_ONCE(true);

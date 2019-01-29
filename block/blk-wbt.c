@@ -101,9 +101,13 @@ static bool wb_recent_wait(struct rq_wb *rwb)
 	return time_before(jiffies, wb->dirty_sleep + HZ);
 }
 
-static inline struct rq_wait *get_rq_wait(struct rq_wb *rwb, bool is_kswapd)
+static inline struct rq_wait *get_rq_wait(struct rq_wb *rwb,
+					  enum wbt_flags wb_acct)
 {
-	return &rwb->rq_wait[is_kswapd];
+	if (wb_acct & WBT_KSWAPD)
+		return &rwb->rq_wait[WBT_RWQ_KSWAPD];
+
+	return &rwb->rq_wait[WBT_RWQ_BG];
 }
 
 static void rwb_wake_all(struct rq_wb *rwb)
@@ -113,20 +117,16 @@ static void rwb_wake_all(struct rq_wb *rwb)
 	for (i = 0; i < WBT_NUM_RWQ; i++) {
 		struct rq_wait *rqw = &rwb->rq_wait[i];
 
-		if (waitqueue_active(&rqw->wait))
+		if (wq_has_sleeper(&rqw->wait))
 			wake_up_all(&rqw->wait);
 	}
 }
 
-void __wbt_done(struct rq_wb *rwb, enum wbt_flags wb_acct)
+static void wbt_rqw_done(struct rq_wb *rwb, struct rq_wait *rqw,
+			 enum wbt_flags wb_acct)
 {
-	struct rq_wait *rqw;
 	int inflight, limit;
 
-	if (!(wb_acct & WBT_TRACKED))
-		return;
-
-	rqw = get_rq_wait(rwb, wb_acct & WBT_KSWAPD);
 	inflight = atomic_dec_return(&rqw->inflight);
 
 	/*
@@ -153,12 +153,23 @@ void __wbt_done(struct rq_wb *rwb, enum wbt_flags wb_acct)
 	if (inflight && inflight >= limit)
 		return;
 
-	if (waitqueue_active(&rqw->wait)) {
+	if (wq_has_sleeper(&rqw->wait)) {
 		int diff = limit - inflight;
 
 		if (!inflight || diff >= rwb->wb_background / 2)
 			wake_up_all(&rqw->wait);
 	}
+}
+
+void __wbt_done(struct rq_wb *rwb, enum wbt_flags wb_acct)
+{
+	struct rq_wait *rqw;
+
+	if (!(wb_acct & WBT_TRACKED))
+		return;
+
+	rqw = get_rq_wait(rwb, wb_acct);
+	wbt_rqw_done(rwb, rqw, wb_acct);
 }
 
 /*
@@ -480,6 +491,13 @@ static inline unsigned int get_limit(struct rq_wb *rwb, unsigned long rw)
 	unsigned int limit;
 
 	/*
+	 * If we got disabled, just return UINT_MAX. This ensures that
+	 * we'll properly inc a new IO, and dec+wakeup at the end.
+	 */
+	if (!rwb_enabled(rwb))
+		return UINT_MAX;
+
+	/*
 	 * At this point we know it's a buffered write. If this is
 	 * kswapd trying to free memory, or REQ_SYNC is set, then
 	 * it's WB_SYNC_ALL writeback, and we'll use the max limit for
@@ -501,50 +519,78 @@ static inline unsigned int get_limit(struct rq_wb *rwb, unsigned long rw)
 	return limit;
 }
 
-static inline bool may_queue(struct rq_wb *rwb, struct rq_wait *rqw,
-			     wait_queue_entry_t *wait, unsigned long rw)
+struct wbt_wait_data {
+	struct wait_queue_entry wq;
+	struct task_struct *task;
+	struct rq_wb *rwb;
+	struct rq_wait *rqw;
+	unsigned long rw;
+	bool got_token;
+};
+
+static int wbt_wake_function(struct wait_queue_entry *curr, unsigned int mode,
+			     int wake_flags, void *key)
 {
-	/*
-	 * inc it here even if disabled, since we'll dec it at completion.
-	 * this only happens if the task was sleeping in __wbt_wait(),
-	 * and someone turned it off at the same time.
-	 */
-	if (!rwb_enabled(rwb)) {
-		atomic_inc(&rqw->inflight);
-		return true;
-	}
+	struct wbt_wait_data *data = container_of(curr, struct wbt_wait_data,
+							wq);
 
 	/*
-	 * If the waitqueue is already active and we are not the next
-	 * in line to be woken up, wait for our turn.
+	 * If we fail to get a budget, return -1 to interrupt the wake up
+	 * loop in __wake_up_common.
 	 */
-	if (waitqueue_active(&rqw->wait) &&
-	    rqw->wait.head.next != &wait->entry)
-		return false;
+	if (!atomic_inc_below(&data->rqw->inflight, get_limit(data->rwb, data->rw)))
+		return -1;
 
-	return atomic_inc_below(&rqw->inflight, get_limit(rwb, rw));
+	data->got_token = true;
+	list_del_init(&curr->entry);
+	wake_up_process(data->task);
+	return 1;
 }
 
 /*
  * Block if we will exceed our limit, or if we are currently waiting for
  * the timer to kick off queuing again.
  */
-static void __wbt_wait(struct rq_wb *rwb, unsigned long rw, spinlock_t *lock)
+static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
+		       unsigned long rw, spinlock_t *lock)
 	__releases(lock)
 	__acquires(lock)
 {
-	struct rq_wait *rqw = get_rq_wait(rwb, current_is_kswapd());
-	DEFINE_WAIT(wait);
+	struct rq_wait *rqw = get_rq_wait(rwb, wb_acct);
+	struct wbt_wait_data data = {
+		.wq = {
+			.func	= wbt_wake_function,
+			.entry	= LIST_HEAD_INIT(data.wq.entry),
+		},
+		.task = current,
+		.rwb = rwb,
+		.rqw = rqw,
+		.rw = rw,
+	};
+	bool has_sleeper;
 
-	if (may_queue(rwb, rqw, &wait, rw))
+	has_sleeper = wq_has_sleeper(&rqw->wait);
+	if (!has_sleeper && atomic_inc_below(&rqw->inflight, get_limit(rwb, rw)))
 		return;
 
+	prepare_to_wait_exclusive(&rqw->wait, &data.wq, TASK_UNINTERRUPTIBLE);
 	do {
-		prepare_to_wait_exclusive(&rqw->wait, &wait,
-						TASK_UNINTERRUPTIBLE);
-
-		if (may_queue(rwb, rqw, &wait, rw))
+		if (data.got_token)
 			break;
+
+		if (!has_sleeper &&
+		    atomic_inc_below(&rqw->inflight, get_limit(rwb, rw))) {
+			finish_wait(&rqw->wait, &data.wq);
+
+			/*
+			 * We raced with wbt_wake_function() getting a token,
+			 * which means we now have two. Put our local token
+			 * and wake anyone else potentially waiting for one.
+			 */
+			if (data.got_token)
+				wbt_rqw_done(rwb, rqw, wb_acct);
+			break;
+		}
 
 		if (lock) {
 			spin_unlock_irq(lock);
@@ -552,9 +598,11 @@ static void __wbt_wait(struct rq_wb *rwb, unsigned long rw, spinlock_t *lock)
 			spin_lock_irq(lock);
 		} else
 			io_schedule();
+
+		has_sleeper = false;
 	} while (1);
 
-	finish_wait(&rqw->wait, &wait);
+	finish_wait(&rqw->wait, &data.wq);
 }
 
 static inline bool wbt_should_throttle(struct rq_wb *rwb, struct bio *bio)
@@ -584,7 +632,7 @@ static inline bool wbt_should_throttle(struct rq_wb *rwb, struct bio *bio)
  */
 enum wbt_flags wbt_wait(struct rq_wb *rwb, struct bio *bio, spinlock_t *lock)
 {
-	unsigned int ret = 0;
+	enum wbt_flags ret = 0;
 
 	if (!rwb_enabled(rwb))
 		return 0;
@@ -598,13 +646,13 @@ enum wbt_flags wbt_wait(struct rq_wb *rwb, struct bio *bio, spinlock_t *lock)
 		return ret;
 	}
 
-	__wbt_wait(rwb, bio->bi_opf, lock);
+	if (current_is_kswapd())
+		ret |= WBT_KSWAPD;
+
+	__wbt_wait(rwb, ret, bio->bi_opf, lock);
 
 	if (!blk_stat_is_active(rwb->cb))
 		rwb_arm_timer(rwb);
-
-	if (current_is_kswapd())
-		ret |= WBT_KSWAPD;
 
 	return ret | WBT_TRACKED;
 }
