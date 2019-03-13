@@ -220,10 +220,9 @@ static unsigned long *alloc_thread_stack_node(struct task_struct *tsk, int node)
 		if (!s)
 			continue;
 
-#ifdef CONFIG_DEBUG_KMEMLEAK
 		/* Clear stale pointers from reused stack. */
 		memset(s->addr, 0, THREAD_SIZE);
-#endif
+
 		tsk->stack_vm_area = s;
 		return s->addr;
 	}
@@ -648,6 +647,14 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 			continue;
 		}
 		charge = 0;
+		/*
+		 * Don't duplicate many vmas if we've been oom-killed (for
+		 * example)
+		 */
+		if (fatal_signal_pending(current)) {
+			retval = -EINTR;
+			goto out;
+		}
 		if (mpnt->vm_flags & VM_ACCOUNT) {
 			unsigned long len = vma_pages(mpnt);
 

@@ -85,7 +85,7 @@ Description: Linux kernel specific documentation for version 4.15.0
  /usr/share/doc/linux-doc/00-INDEX for a list of what is
  contained in each file.
 
-Package: linux-headers-4.15.0-46
+Package: linux-headers-4.15.0-47
 Build-Profiles: <!stage1>
 Architecture: all
 Multi-Arch: foreign
@@ -95,7 +95,7 @@ Depends: ${misc:Depends}, coreutils
 Description: Header files related to Linux kernel version 4.15.0
  This package provides kernel header files for version 4.15.0, for sites
  that want the latest kernel headers. Please read
- /usr/share/doc/linux-headers-4.15.0-46/debian.README.gz for details
+ /usr/share/doc/linux-headers-4.15.0-47/debian.README.gz for details
 
 Package: linux-libc-dev
 Architecture: i386 amd64 armhf arm64 x32 ppc64el s390x
@@ -122,18 +122,18 @@ Description: Linux kernel version specific tools for version 4.15.0
  version locked tools (such as perf and x86_energy_perf_policy) for
  version PGKVER.
 
-Package: linux-tools-4.15.0-46
+Package: linux-tools-4.15.0-47
 Build-Profiles: <!stage1>
 Architecture: i386 amd64 armhf arm64 ppc64el s390x
 Section: devel
 Priority: optional
 Depends: ${misc:Depends}, ${shlibs:Depends}, linux-tools-common
-Description: Linux kernel version specific tools for version 4.15.0-46
+Description: Linux kernel version specific tools for version 4.15.0-47
  This package provides the architecture dependant parts for kernel
  version locked tools (such as perf and x86_energy_perf_policy) for
- version 4.15.0-46 on
+ version 4.15.0-47 on
  64 bit x86.
- You probably want to install linux-tools-4.15.0-46-<flavour>.
+ You probably want to install linux-tools-4.15.0-47-<flavour>.
 
 Package: linux-cloud-tools-common
 Build-Profiles: <!stage1>
@@ -146,17 +146,17 @@ Description: Linux kernel version specific cloud tools for version 4.15.0
  This package provides the architecture independent parts for kernel
  version locked tools for cloud tools for version PGKVER.
 
-Package: linux-cloud-tools-4.15.0-46
+Package: linux-cloud-tools-4.15.0-47
 Build-Profiles: <!stage1>
 Architecture: i386 amd64 armhf
 Section: devel
 Priority: optional
 Depends: ${misc:Depends}, ${shlibs:Depends}, linux-cloud-tools-common
-Description: Linux kernel version specific cloud tools for version 4.15.0-46
+Description: Linux kernel version specific cloud tools for version 4.15.0-47
  This package provides the architecture dependant parts for kernel
- version locked tools for cloud tools for version 4.15.0-46 on
+ version locked tools for cloud tools for version 4.15.0-47 on
  64 bit x86.
- You probably want to install linux-cloud-tools-4.15.0-46-<flavour>.
+ You probably want to install linux-cloud-tools-4.15.0-47-<flavour>.
 
 Package: linux-tools-host
 Build-Profiles: <!stage1>
@@ -169,17 +169,17 @@ Description: Linux kernel VM host tools
  This package provides kernel tools useful for VM hosts.
 
 
-Package: linux-image-unsigned-4.15.0-46-generic
+Package: linux-image-unsigned-4.15.0-47-generic
 Build-Profiles: <!stage1>
 Architecture: i386 amd64 armhf arm64 ppc64el s390x
 Section: kernel
 Priority: optional
 Provides: linux-image, fuse-module, aufs-dkms, kvm-api-4, redhat-cluster-modules, ivtv-modules, virtualbox-guest-modules [i386 amd64 x32]${linux:rprovides}
-Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-4.15.0-46-generic
+Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-4.15.0-47-generic
 Recommends: grub-pc [i386 amd64 x32] | grub-efi-amd64 [amd64 x32] | grub-efi-ia32 [i386 amd64 x32] | grub [i386 amd64 x32] | lilo [i386 amd64 x32] | flash-kernel [armhf arm64] | grub-ieee1275 [ppc64el], initramfs-tools | linux-initramfs-tool
 Breaks: flash-kernel (<< 3.90ubuntu2) [arm64 armhf], s390-tools (<< 2.3.0-0ubuntu3) [s390x]
-Conflicts: linux-image-4.15.0-46-generic
-Suggests: fdutils, linux-doc-4.15.0 | linux-source-4.15.0, linux-tools, linux-headers-4.15.0-46-generic
+Conflicts: linux-image-4.15.0-47-generic
+Suggests: fdutils, linux-doc-4.15.0 | linux-source-4.15.0, linux-tools, linux-headers-4.15.0-47-generic
 Description: Linux kernel image for version 4.15.0 on 64 bit x86 SMP
  This package contains the unsigned Linux kernel image for version 4.15.0 on
  64 bit x86 SMP.
@@ -192,7 +192,7 @@ Description: Linux kernel image for version 4.15.0 on 64 bit x86 SMP
  the linux-generic meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-modules-4.15.0-46-generic
+Package: linux-modules-4.15.0-47-generic
 Build-Profiles: <!stage1>
 Architecture: i386 amd64 armhf arm64 ppc64el s390x
 Section: kernel
@@ -211,12 +211,12 @@ Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  the linux-generic meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-modules-extra-4.15.0-46-generic
+Package: linux-modules-extra-4.15.0-47-generic
 Build-Profiles: <!stage1>
 Architecture: i386 amd64 armhf arm64 ppc64el s390x
 Section: kernel
 Priority: optional
-Depends: ${misc:Depends}, ${shlibs:Depends}, linux-image-4.15.0-46-generic | linux-image-unsigned-4.15.0-46-generic, crda | wireless-crda
+Depends: ${misc:Depends}, ${shlibs:Depends}, linux-image-4.15.0-47-generic | linux-image-unsigned-4.15.0-47-generic, crda | wireless-crda
 Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  This package contains the Linux kernel extra modules for version 4.15.0 on
  64 bit x86 SMP.
@@ -233,21 +233,21 @@ Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  the linux-generic meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-headers-4.15.0-46-generic
+Package: linux-headers-4.15.0-47-generic
 Build-Profiles: <!stage1>
 Architecture: i386 amd64 armhf arm64 ppc64el s390x
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-headers-4.15.0-46, ${shlibs:Depends}
+Depends: ${misc:Depends}, linux-headers-4.15.0-47, ${shlibs:Depends}
 Provides: linux-headers, linux-headers-3.0
 Description: Linux kernel headers for version 4.15.0 on 64 bit x86 SMP
  This package provides kernel header files for version 4.15.0 on
  64 bit x86 SMP.
  .
  This is for sites that want the latest kernel headers.  Please read
- /usr/share/doc/linux-headers-4.15.0-46/debian.README.gz for details.
+ /usr/share/doc/linux-headers-4.15.0-47/debian.README.gz for details.
 
-Package: linux-image-unsigned-4.15.0-46-generic-dbgsym
+Package: linux-image-unsigned-4.15.0-47-generic-dbgsym
 Build-Profiles: <!stage1>
 Architecture: i386 amd64 armhf arm64 ppc64el s390x
 Section: devel
@@ -264,27 +264,27 @@ Description: Linux kernel debug image for version 4.15.0 on 64 bit x86 SMP
  is uncompressed, and unstripped. This package also includes the
  unstripped modules.
 
-Package: linux-tools-4.15.0-46-generic
+Package: linux-tools-4.15.0-47-generic
 Build-Profiles: <!stage1>
 Architecture: i386 amd64 armhf arm64 ppc64el s390x
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-tools-4.15.0-46
-Description: Linux kernel version specific tools for version 4.15.0-46
+Depends: ${misc:Depends}, linux-tools-4.15.0-47
+Description: Linux kernel version specific tools for version 4.15.0-47
  This package provides the architecture dependant parts for kernel
  version locked tools (such as perf and x86_energy_perf_policy) for
- version 4.15.0-46 on
+ version 4.15.0-47 on
  64 bit x86.
 
-Package: linux-cloud-tools-4.15.0-46-generic
+Package: linux-cloud-tools-4.15.0-47-generic
 Build-Profiles: <!stage1>
 Architecture: i386 amd64 armhf arm64 ppc64el s390x
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-cloud-tools-4.15.0-46
-Description: Linux kernel version specific cloud tools for version 4.15.0-46
+Depends: ${misc:Depends}, linux-cloud-tools-4.15.0-47
+Description: Linux kernel version specific cloud tools for version 4.15.0-47
  This package provides the architecture dependant parts for kernel
- version locked tools for cloud for version 4.15.0-46 on
+ version locked tools for cloud for version 4.15.0-47 on
  64 bit x86.
 
 Package: linux-udebs-generic
@@ -298,7 +298,7 @@ Description: Metapackage depending on kernel udebs
  for easier version and migration tracking.
 
 
-Package: linux-buildinfo-4.15.0-46-generic
+Package: linux-buildinfo-4.15.0-47-generic
 Build-Profiles: <!stage1>
 Architecture: i386 amd64 armhf arm64 ppc64el s390x
 Section: kernel
@@ -311,17 +311,17 @@ Description: Linux kernel buildinfo for version 4.15.0 on 64 bit x86 SMP
  .
  You likely do not want to install this package.
 
-Package: linux-image-unsigned-4.15.0-46-generic-lpae
+Package: linux-image-unsigned-4.15.0-47-generic-lpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: kernel
 Priority: optional
 Provides: linux-image, fuse-module, aufs-dkms, kvm-api-4, redhat-cluster-modules, ivtv-modules${linux:rprovides}
-Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-4.15.0-46-generic-lpae
+Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-4.15.0-47-generic-lpae
 Recommends: flash-kernel [armhf], initramfs-tools | linux-initramfs-tool
 Breaks: flash-kernel (<< 3.90ubuntu2) [arm64 armhf], s390-tools (<< 2.3.0-0ubuntu3) [s390x]
-Conflicts: linux-image-4.15.0-46-generic-lpae
-Suggests: fdutils, linux-doc-4.15.0 | linux-source-4.15.0, linux-tools, linux-headers-4.15.0-46-generic-lpae
+Conflicts: linux-image-4.15.0-47-generic-lpae
+Suggests: fdutils, linux-doc-4.15.0 | linux-source-4.15.0, linux-tools, linux-headers-4.15.0-47-generic-lpae
 Description: Linux kernel image for version 4.15.0 on 64 bit x86 SMP
  This package contains the unsigned Linux kernel image for version 4.15.0 on
  64 bit x86 SMP.
@@ -334,7 +334,7 @@ Description: Linux kernel image for version 4.15.0 on 64 bit x86 SMP
  the linux-generic-lpae meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-modules-4.15.0-46-generic-lpae
+Package: linux-modules-4.15.0-47-generic-lpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: kernel
@@ -353,12 +353,12 @@ Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  the linux-generic-lpae meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-modules-extra-4.15.0-46-generic-lpae
+Package: linux-modules-extra-4.15.0-47-generic-lpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: kernel
 Priority: optional
-Depends: ${misc:Depends}, ${shlibs:Depends}, linux-image-4.15.0-46-generic-lpae | linux-image-unsigned-4.15.0-46-generic-lpae, crda | wireless-crda
+Depends: ${misc:Depends}, ${shlibs:Depends}, linux-image-4.15.0-47-generic-lpae | linux-image-unsigned-4.15.0-47-generic-lpae, crda | wireless-crda
 Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  This package contains the Linux kernel extra modules for version 4.15.0 on
  64 bit x86 SMP.
@@ -375,21 +375,21 @@ Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  the linux-generic-lpae meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-headers-4.15.0-46-generic-lpae
+Package: linux-headers-4.15.0-47-generic-lpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-headers-4.15.0-46, ${shlibs:Depends}
+Depends: ${misc:Depends}, linux-headers-4.15.0-47, ${shlibs:Depends}
 Provides: linux-headers, linux-headers-3.0
 Description: Linux kernel headers for version 4.15.0 on 64 bit x86 SMP
  This package provides kernel header files for version 4.15.0 on
  64 bit x86 SMP.
  .
  This is for sites that want the latest kernel headers.  Please read
- /usr/share/doc/linux-headers-4.15.0-46/debian.README.gz for details.
+ /usr/share/doc/linux-headers-4.15.0-47/debian.README.gz for details.
 
-Package: linux-image-unsigned-4.15.0-46-generic-lpae-dbgsym
+Package: linux-image-unsigned-4.15.0-47-generic-lpae-dbgsym
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: devel
@@ -406,27 +406,27 @@ Description: Linux kernel debug image for version 4.15.0 on 64 bit x86 SMP
  is uncompressed, and unstripped. This package also includes the
  unstripped modules.
 
-Package: linux-tools-4.15.0-46-generic-lpae
+Package: linux-tools-4.15.0-47-generic-lpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-tools-4.15.0-46
-Description: Linux kernel version specific tools for version 4.15.0-46
+Depends: ${misc:Depends}, linux-tools-4.15.0-47
+Description: Linux kernel version specific tools for version 4.15.0-47
  This package provides the architecture dependant parts for kernel
  version locked tools (such as perf and x86_energy_perf_policy) for
- version 4.15.0-46 on
+ version 4.15.0-47 on
  64 bit x86.
 
-Package: linux-cloud-tools-4.15.0-46-generic-lpae
+Package: linux-cloud-tools-4.15.0-47-generic-lpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-cloud-tools-4.15.0-46
-Description: Linux kernel version specific cloud tools for version 4.15.0-46
+Depends: ${misc:Depends}, linux-cloud-tools-4.15.0-47
+Description: Linux kernel version specific cloud tools for version 4.15.0-47
  This package provides the architecture dependant parts for kernel
- version locked tools for cloud for version 4.15.0-46 on
+ version locked tools for cloud for version 4.15.0-47 on
  64 bit x86.
 
 Package: linux-udebs-generic-lpae
@@ -440,7 +440,7 @@ Description: Metapackage depending on kernel udebs
  for easier version and migration tracking.
 
 
-Package: linux-buildinfo-4.15.0-46-generic-lpae
+Package: linux-buildinfo-4.15.0-47-generic-lpae
 Build-Profiles: <!stage1>
 Architecture: armhf
 Section: kernel
@@ -453,17 +453,17 @@ Description: Linux kernel buildinfo for version 4.15.0 on 64 bit x86 SMP
  .
  You likely do not want to install this package.
 
-Package: linux-image-unsigned-4.15.0-46-lowlatency
+Package: linux-image-unsigned-4.15.0-47-lowlatency
 Build-Profiles: <!stage1>
 Architecture: i386 amd64
 Section: kernel
 Priority: optional
 Provides: linux-image, fuse-module, aufs-dkms, kvm-api-4, redhat-cluster-modules, ivtv-modules, virtualbox-guest-modules [i386 amd64 x32]${linux:rprovides}
-Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-4.15.0-46-lowlatency
+Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-4.15.0-47-lowlatency
 Recommends: grub-pc [i386 amd64 x32] | grub-efi-amd64 [amd64 x32] | grub-efi-ia32 [i386 amd64 x32] | grub [i386 amd64 x32] | lilo [i386 amd64 x32] | flash-kernel [armhf arm64], initramfs-tools | linux-initramfs-tool
 Breaks: flash-kernel (<< 3.90ubuntu2) [arm64 armhf], s390-tools (<< 2.3.0-0ubuntu3) [s390x]
-Conflicts: linux-image-4.15.0-46-lowlatency
-Suggests: fdutils, linux-doc-4.15.0 | linux-source-4.15.0, linux-tools, linux-headers-4.15.0-46-lowlatency
+Conflicts: linux-image-4.15.0-47-lowlatency
+Suggests: fdutils, linux-doc-4.15.0 | linux-source-4.15.0, linux-tools, linux-headers-4.15.0-47-lowlatency
 Description: Linux kernel image for version 4.15.0 on 64 bit x86 SMP
  This package contains the unsigned Linux kernel image for version 4.15.0 on
  64 bit x86 SMP.
@@ -476,7 +476,7 @@ Description: Linux kernel image for version 4.15.0 on 64 bit x86 SMP
  the linux-lowlatency meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-modules-4.15.0-46-lowlatency
+Package: linux-modules-4.15.0-47-lowlatency
 Build-Profiles: <!stage1>
 Architecture: i386 amd64
 Section: kernel
@@ -495,12 +495,12 @@ Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  the linux-lowlatency meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-modules-extra-4.15.0-46-lowlatency
+Package: linux-modules-extra-4.15.0-47-lowlatency
 Build-Profiles: <!stage1>
 Architecture: i386 amd64
 Section: kernel
 Priority: optional
-Depends: ${misc:Depends}, ${shlibs:Depends}, linux-image-4.15.0-46-lowlatency | linux-image-unsigned-4.15.0-46-lowlatency, crda | wireless-crda
+Depends: ${misc:Depends}, ${shlibs:Depends}, linux-image-4.15.0-47-lowlatency | linux-image-unsigned-4.15.0-47-lowlatency, crda | wireless-crda
 Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  This package contains the Linux kernel extra modules for version 4.15.0 on
  64 bit x86 SMP.
@@ -517,21 +517,21 @@ Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  the linux-lowlatency meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-headers-4.15.0-46-lowlatency
+Package: linux-headers-4.15.0-47-lowlatency
 Build-Profiles: <!stage1>
 Architecture: i386 amd64
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-headers-4.15.0-46, ${shlibs:Depends}
+Depends: ${misc:Depends}, linux-headers-4.15.0-47, ${shlibs:Depends}
 Provides: linux-headers, linux-headers-3.0
 Description: Linux kernel headers for version 4.15.0 on 64 bit x86 SMP
  This package provides kernel header files for version 4.15.0 on
  64 bit x86 SMP.
  .
  This is for sites that want the latest kernel headers.  Please read
- /usr/share/doc/linux-headers-4.15.0-46/debian.README.gz for details.
+ /usr/share/doc/linux-headers-4.15.0-47/debian.README.gz for details.
 
-Package: linux-image-unsigned-4.15.0-46-lowlatency-dbgsym
+Package: linux-image-unsigned-4.15.0-47-lowlatency-dbgsym
 Build-Profiles: <!stage1>
 Architecture: i386 amd64
 Section: devel
@@ -548,27 +548,27 @@ Description: Linux kernel debug image for version 4.15.0 on 64 bit x86 SMP
  is uncompressed, and unstripped. This package also includes the
  unstripped modules.
 
-Package: linux-tools-4.15.0-46-lowlatency
+Package: linux-tools-4.15.0-47-lowlatency
 Build-Profiles: <!stage1>
 Architecture: i386 amd64
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-tools-4.15.0-46
-Description: Linux kernel version specific tools for version 4.15.0-46
+Depends: ${misc:Depends}, linux-tools-4.15.0-47
+Description: Linux kernel version specific tools for version 4.15.0-47
  This package provides the architecture dependant parts for kernel
  version locked tools (such as perf and x86_energy_perf_policy) for
- version 4.15.0-46 on
+ version 4.15.0-47 on
  64 bit x86.
 
-Package: linux-cloud-tools-4.15.0-46-lowlatency
+Package: linux-cloud-tools-4.15.0-47-lowlatency
 Build-Profiles: <!stage1>
 Architecture: i386 amd64
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-cloud-tools-4.15.0-46
-Description: Linux kernel version specific cloud tools for version 4.15.0-46
+Depends: ${misc:Depends}, linux-cloud-tools-4.15.0-47
+Description: Linux kernel version specific cloud tools for version 4.15.0-47
  This package provides the architecture dependant parts for kernel
- version locked tools for cloud for version 4.15.0-46 on
+ version locked tools for cloud for version 4.15.0-47 on
  64 bit x86.
 
 Package: linux-udebs-lowlatency
@@ -582,7 +582,7 @@ Description: Metapackage depending on kernel udebs
  for easier version and migration tracking.
 
 
-Package: linux-buildinfo-4.15.0-46-lowlatency
+Package: linux-buildinfo-4.15.0-47-lowlatency
 Build-Profiles: <!stage1>
 Architecture: i386 amd64
 Section: kernel
@@ -595,17 +595,17 @@ Description: Linux kernel buildinfo for version 4.15.0 on 64 bit x86 SMP
  .
  You likely do not want to install this package.
 
-Package: linux-image-unsigned-4.15.0-46-snapdragon
+Package: linux-image-unsigned-4.15.0-47-snapdragon
 Build-Profiles: <!stage1>
 Architecture: arm64
 Section: kernel
 Priority: optional
 Provides: linux-image, fuse-module, aufs-dkms, kvm-api-4, redhat-cluster-modules, ivtv-modules${linux:rprovides}
-Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-4.15.0-46-snapdragon
+Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-4.15.0-47-snapdragon
 Recommends: flash-kernel [arm64], initramfs-tools | linux-initramfs-tool
 Breaks: flash-kernel (<< 3.90ubuntu2) [arm64 armhf], s390-tools (<< 2.3.0-0ubuntu3) [s390x]
-Conflicts: linux-image-4.15.0-46-snapdragon
-Suggests: fdutils, linux-doc-4.15.0 | linux-source-4.15.0, linux-tools, linux-headers-4.15.0-46-snapdragon
+Conflicts: linux-image-4.15.0-47-snapdragon
+Suggests: fdutils, linux-doc-4.15.0 | linux-source-4.15.0, linux-tools, linux-headers-4.15.0-47-snapdragon
 Description: Linux kernel image for version 4.15.0 on 64 bit x86 SMP
  This package contains the unsigned Linux kernel image for version 4.15.0 on
  64 bit x86 SMP.
@@ -618,7 +618,7 @@ Description: Linux kernel image for version 4.15.0 on 64 bit x86 SMP
  the linux-snapdragon meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-modules-4.15.0-46-snapdragon
+Package: linux-modules-4.15.0-47-snapdragon
 Build-Profiles: <!stage1>
 Architecture: arm64
 Section: kernel
@@ -637,12 +637,12 @@ Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  the linux-snapdragon meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-modules-extra-4.15.0-46-snapdragon
+Package: linux-modules-extra-4.15.0-47-snapdragon
 Build-Profiles: <!stage1>
 Architecture: arm64
 Section: kernel
 Priority: optional
-Depends: ${misc:Depends}, ${shlibs:Depends}, linux-image-4.15.0-46-snapdragon | linux-image-unsigned-4.15.0-46-snapdragon, crda | wireless-crda
+Depends: ${misc:Depends}, ${shlibs:Depends}, linux-image-4.15.0-47-snapdragon | linux-image-unsigned-4.15.0-47-snapdragon, crda | wireless-crda
 Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  This package contains the Linux kernel extra modules for version 4.15.0 on
  64 bit x86 SMP.
@@ -659,21 +659,21 @@ Description: Linux kernel extra modules for version 4.15.0 on 64 bit x86 SMP
  the linux-snapdragon meta-package, which will ensure that upgrades work
  correctly, and that supporting packages are also installed.
 
-Package: linux-headers-4.15.0-46-snapdragon
+Package: linux-headers-4.15.0-47-snapdragon
 Build-Profiles: <!stage1>
 Architecture: arm64
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-headers-4.15.0-46, ${shlibs:Depends}
+Depends: ${misc:Depends}, linux-headers-4.15.0-47, ${shlibs:Depends}
 Provides: linux-headers, linux-headers-3.0
 Description: Linux kernel headers for version 4.15.0 on 64 bit x86 SMP
  This package provides kernel header files for version 4.15.0 on
  64 bit x86 SMP.
  .
  This is for sites that want the latest kernel headers.  Please read
- /usr/share/doc/linux-headers-4.15.0-46/debian.README.gz for details.
+ /usr/share/doc/linux-headers-4.15.0-47/debian.README.gz for details.
 
-Package: linux-image-unsigned-4.15.0-46-snapdragon-dbgsym
+Package: linux-image-unsigned-4.15.0-47-snapdragon-dbgsym
 Build-Profiles: <!stage1>
 Architecture: arm64
 Section: devel
@@ -690,27 +690,27 @@ Description: Linux kernel debug image for version 4.15.0 on 64 bit x86 SMP
  is uncompressed, and unstripped. This package also includes the
  unstripped modules.
 
-Package: linux-tools-4.15.0-46-snapdragon
+Package: linux-tools-4.15.0-47-snapdragon
 Build-Profiles: <!stage1>
 Architecture: arm64
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-tools-4.15.0-46
-Description: Linux kernel version specific tools for version 4.15.0-46
+Depends: ${misc:Depends}, linux-tools-4.15.0-47
+Description: Linux kernel version specific tools for version 4.15.0-47
  This package provides the architecture dependant parts for kernel
  version locked tools (such as perf and x86_energy_perf_policy) for
- version 4.15.0-46 on
+ version 4.15.0-47 on
  64 bit x86.
 
-Package: linux-cloud-tools-4.15.0-46-snapdragon
+Package: linux-cloud-tools-4.15.0-47-snapdragon
 Build-Profiles: <!stage1>
 Architecture: arm64
 Section: devel
 Priority: optional
-Depends: ${misc:Depends}, linux-cloud-tools-4.15.0-46
-Description: Linux kernel version specific cloud tools for version 4.15.0-46
+Depends: ${misc:Depends}, linux-cloud-tools-4.15.0-47
+Description: Linux kernel version specific cloud tools for version 4.15.0-47
  This package provides the architecture dependant parts for kernel
- version locked tools for cloud for version 4.15.0-46 on
+ version locked tools for cloud for version 4.15.0-47 on
  64 bit x86.
 
 Package: linux-udebs-snapdragon
@@ -724,7 +724,7 @@ Description: Metapackage depending on kernel udebs
  for easier version and migration tracking.
 
 
-Package: linux-buildinfo-4.15.0-46-snapdragon
+Package: linux-buildinfo-4.15.0-47-snapdragon
 Build-Profiles: <!stage1>
 Architecture: arm64
 Section: kernel

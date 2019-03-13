@@ -140,6 +140,7 @@ struct hw_sequencer_funcs {
 	void (*unblank_stream)(struct pipe_ctx *pipe_ctx,
 			struct dc_link_settings *link_settings);
 
+	void (*blank_stream)(struct pipe_ctx *pipe_ctx);
 	void (*pipe_control_lock)(
 				struct dc *dc,
 				struct pipe_ctx *pipe,
@@ -179,11 +180,13 @@ struct hw_sequencer_funcs {
 	void (*ready_shared_resources)(struct dc *dc, struct dc_state *context);
 	void (*optimize_shared_resources)(struct dc *dc);
 	void (*edp_power_control)(
-			struct link_encoder *enc,
+			struct dc_link *link,
 			bool enable);
 	void (*edp_backlight_control)(
 			struct dc_link *link,
 			bool enable);
+	void (*edp_wait_for_hpd_ready)(struct dc_link *link, bool power_up);
+
 };
 
 void color_space_to_black_color(

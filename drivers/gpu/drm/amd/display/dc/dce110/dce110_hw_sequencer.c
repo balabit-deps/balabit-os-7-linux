@@ -814,11 +814,11 @@ static enum bp_result link_transmitter_control(
  * eDP only.
  */
 void hwss_edp_wait_for_hpd_ready(
-	struct link_encoder *enc,
-	bool power_up)
+		struct dc_link *link,
+		bool power_up)
 {
-	struct dc_context *ctx = enc->ctx;
-	struct graphics_object_id connector = enc->connector;
+	struct dc_context *ctx = link->ctx;
+	struct graphics_object_id connector = link->link_enc->connector;
 	struct gpio *hpd;
 	bool edp_hpd_high = false;
 	uint32_t time_elapsed = 0;
@@ -882,16 +882,16 @@ void hwss_edp_wait_for_hpd_ready(
 }
 
 void hwss_edp_power_control(
-	struct link_encoder *enc,
-	bool power_up)
+		struct dc_link *link,
+		bool power_up)
 {
-	struct dc_context *ctx = enc->ctx;
+	struct dc_context *ctx = link->ctx;
 	struct dce_hwseq *hwseq = ctx->dc->hwseq;
 	struct bp_transmitter_control cntl = { 0 };
 	enum bp_result bp_result;
 
 
-	if (dal_graphics_object_id_get_connector_id(enc->connector)
+	if (dal_graphics_object_id_get_connector_id(link->link_enc->connector)
 			!= CONNECTOR_ID_EDP) {
 		BREAK_TO_DEBUGGER();
 		return;
@@ -907,11 +907,11 @@ void hwss_edp_power_control(
 		cntl.action = power_up ?
 			TRANSMITTER_CONTROL_POWER_ON :
 			TRANSMITTER_CONTROL_POWER_OFF;
-		cntl.transmitter = enc->transmitter;
-		cntl.connector_obj_id = enc->connector;
+		cntl.transmitter = link->link_enc->transmitter;
+		cntl.connector_obj_id = link->link_enc->connector;
 		cntl.coherent = false;
 		cntl.lanes_number = LANE_COUNT_FOUR;
-		cntl.hpd_sel = enc->hpd_source;
+		cntl.hpd_sel = link->link_enc->hpd_source;
 
 		bp_result = link_transmitter_control(ctx->dc_bios, &cntl);
 
@@ -924,8 +924,6 @@ void hwss_edp_power_control(
 				"%s: Skipping Panel Power action: %s\n",
 				__func__, (power_up ? "On":"Off"));
 	}
-
-	hwss_edp_wait_for_hpd_ready(enc, true);
 }
 
 /*todo: cloned in stream enc, fix*/
@@ -934,14 +932,14 @@ void hwss_edp_power_control(
  * eDP only. Control the backlight of the eDP panel
  */
 void hwss_edp_backlight_control(
-	struct dc_link *link,
-	bool enable)
+		struct dc_link *link,
+		bool enable)
 {
-	struct dce_hwseq *hws = link->dc->hwseq;
-	struct dc_context *ctx = link->dc->ctx;
+	struct dc_context *ctx = link->ctx;
+	struct dce_hwseq *hws = ctx->dc->hwseq;
 	struct bp_transmitter_control cntl = { 0 };
 
-	if (dal_graphics_object_id_get_connector_id(link->link_id)
+	if (dal_graphics_object_id_get_connector_id(link->link_enc->connector)
 		!= CONNECTOR_ID_EDP) {
 		BREAK_TO_DEBUGGER();
 		return;
@@ -982,7 +980,7 @@ void hwss_edp_backlight_control(
 	 * Enable it in the future if necessary.
 	 */
 	/* dc_service_sleep_in_milliseconds(50); */
-	link_transmitter_control(link->dc->ctx->dc_bios, &cntl);
+	link_transmitter_control(ctx->dc_bios, &cntl);
 }
 
 void dce110_disable_stream(struct pipe_ctx *pipe_ctx, int option)
@@ -1026,11 +1024,9 @@ void dce110_disable_stream(struct pipe_ctx *pipe_ctx, int option)
 	}
 
 	/* blank at encoder level */
-	if (dc_is_dp_signal(pipe_ctx->stream->signal)) {
-		if (pipe_ctx->stream->sink->link->connector_signal == SIGNAL_TYPE_EDP)
-			hwss_edp_backlight_control(link, false);
+	if (dc_is_dp_signal(pipe_ctx->stream->signal))
 		pipe_ctx->stream_res.stream_enc->funcs->dp_blank(pipe_ctx->stream_res.stream_enc);
-	}
+
 	link->link_enc->funcs->connect_dig_be_to_fe(
 			link->link_enc,
 			pipe_ctx->stream_res.stream_enc->id,
@@ -1042,15 +1038,30 @@ void dce110_unblank_stream(struct pipe_ctx *pipe_ctx,
 		struct dc_link_settings *link_settings)
 {
 	struct encoder_unblank_param params = { { 0 } };
-	struct dc_link *link = pipe_ctx->stream->sink->link;
+	struct dc_stream_state *stream = pipe_ctx->stream;
+	struct dc_link *link = stream->sink->link;
 
 	/* only 3 items below are used by unblank */
 	params.pixel_clk_khz =
 		pipe_ctx->stream->timing.pix_clk_khz;
 	params.link_settings.link_rate = link_settings->link_rate;
-	pipe_ctx->stream_res.stream_enc->funcs->dp_unblank(pipe_ctx->stream_res.stream_enc, &params);
-	if (link->connector_signal == SIGNAL_TYPE_EDP)
-		hwss_edp_backlight_control(link, true);
+
+	if (dc_is_dp_signal(pipe_ctx->stream->signal))
+		pipe_ctx->stream_res.stream_enc->funcs->dp_unblank(pipe_ctx->stream_res.stream_enc, &params);
+
+	if (link->local_sink && link->local_sink->sink_signal == SIGNAL_TYPE_EDP)
+		link->dc->hwss.edp_backlight_control(link, true);
+}
+void dce110_blank_stream(struct pipe_ctx *pipe_ctx)
+{
+	struct dc_stream_state *stream = pipe_ctx->stream;
+	struct dc_link *link = stream->sink->link;
+
+	if (link->local_sink && link->local_sink->sink_signal == SIGNAL_TYPE_EDP)
+		link->dc->hwss.edp_backlight_control(link, false);
+
+	if (dc_is_dp_signal(pipe_ctx->stream->signal))
+		pipe_ctx->stream_res.stream_enc->funcs->dp_blank(pipe_ctx->stream_res.stream_enc);
 }
 
 
@@ -1401,7 +1412,7 @@ static void power_down_encoders(struct dc *dc)
 		}
 
 		dc->links[i]->link_enc->funcs->disable_output(
-				dc->links[i]->link_enc, signal, dc->links[i]);
+				dc->links[i]->link_enc, signal);
 	}
 }
 
@@ -2513,6 +2524,10 @@ static void init_hw(struct dc *dc)
 		 * required signal (which may be different from the
 		 * default signal on connector). */
 		struct dc_link *link = dc->links[i];
+
+		if (link->link_enc->connector.id == CONNECTOR_ID_EDP)
+			dc->hwss.edp_power_control(link, true);
+
 		link->link_enc->funcs->hw_init(link->link_enc);
 	}
 
@@ -2981,6 +2996,7 @@ static const struct hw_sequencer_funcs dce110_funcs = {
 	.enable_stream = dce110_enable_stream,
 	.disable_stream = dce110_disable_stream,
 	.unblank_stream = dce110_unblank_stream,
+	.blank_stream = dce110_blank_stream,
 	.enable_display_pipe_clock_gating = enable_display_pipe_clock_gating,
 	.enable_display_power_gating = dce110_enable_display_power_gating,
 	.power_down_front_end = dce110_power_down_fe,
@@ -2998,6 +3014,7 @@ static const struct hw_sequencer_funcs dce110_funcs = {
 	.optimize_shared_resources = optimize_shared_resources,
 	.edp_backlight_control = hwss_edp_backlight_control,
 	.edp_power_control = hwss_edp_power_control,
+	.edp_wait_for_hpd_ready = hwss_edp_wait_for_hpd_ready,
 };
 
 void dce110_hw_sequencer_construct(struct dc *dc)

@@ -52,6 +52,7 @@ void dce110_disable_stream(struct pipe_ctx *pipe_ctx, int option);
 void dce110_unblank_stream(struct pipe_ctx *pipe_ctx,
 		struct dc_link_settings *link_settings);
 
+void dce110_blank_stream(struct pipe_ctx *pipe_ctx);
 void dce110_update_info_frame(struct pipe_ctx *pipe_ctx);
 
 void dce110_set_avmute(struct pipe_ctx *pipe_ctx, bool enable);
@@ -70,12 +71,16 @@ uint32_t dce110_get_min_vblank_time_us(const struct dc_state *context);
 void dp_receiver_power_ctrl(struct dc_link *link, bool on);
 
 void hwss_edp_power_control(
-	struct link_encoder *enc,
-	bool power_up);
+		struct dc_link *link,
+		bool power_up);
 
 void hwss_edp_backlight_control(
 	struct dc_link *link,
 	bool enable);
+
+void hwss_edp_wait_for_hpd_ready(
+		struct dc_link *link,
+		bool power_up);
 
 #endif /* __DC_HWSS_DCE110_H__ */
 

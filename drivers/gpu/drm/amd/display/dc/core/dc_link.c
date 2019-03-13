@@ -1271,6 +1271,23 @@ static enum dc_status enable_link_dp(
 	return status;
 }
 
+static enum dc_status enable_link_edp(
+		struct dc_state *state,
+		struct pipe_ctx *pipe_ctx)
+{
+	enum dc_status status;
+	struct dc_stream_state *stream = pipe_ctx->stream;
+	struct dc_link *link = stream->sink->link;
+
+	/*in case it is not on*/
+	link->dc->hwss.edp_power_control(link, true);
+	link->dc->hwss.edp_wait_for_hpd_ready(link, true);
+
+	status = enable_link_dp(state, pipe_ctx);
+
+	return status;
+}
+
 static enum dc_status enable_link_dp_mst(
 		struct dc_state *state,
 		struct pipe_ctx *pipe_ctx)
@@ -1746,8 +1763,10 @@ static enum dc_status enable_link(
 	enum dc_status status = DC_ERROR_UNEXPECTED;
 	switch (pipe_ctx->stream->signal) {
 	case SIGNAL_TYPE_DISPLAY_PORT:
-	case SIGNAL_TYPE_EDP:
 		status = enable_link_dp(state, pipe_ctx);
+		break;
+	case SIGNAL_TYPE_EDP:
+		status = enable_link_edp(state, pipe_ctx);
 		break;
 	case SIGNAL_TYPE_DISPLAY_PORT_MST:
 		status = enable_link_dp_mst(state, pipe_ctx);
@@ -1798,7 +1817,7 @@ static void disable_link(struct dc_link *link, enum signal_type signal)
 		else
 			dp_disable_link_phy_mst(link, signal);
 	} else
-		link->link_enc->funcs->disable_output(link->link_enc, signal, link);
+		link->link_enc->funcs->disable_output(link->link_enc, signal);
 }
 
 static bool dp_active_dongle_validate_timing(
@@ -2408,14 +2427,15 @@ void core_link_enable_stream(
 	if (pipe_ctx->stream->signal == SIGNAL_TYPE_DISPLAY_PORT_MST)
 		allocate_mst_payload(pipe_ctx);
 
-	if (dc_is_dp_signal(pipe_ctx->stream->signal))
-		core_dc->hwss.unblank_stream(pipe_ctx,
-			&pipe_ctx->stream->sink->link->cur_link_settings);
+	core_dc->hwss.unblank_stream(pipe_ctx,
+		&pipe_ctx->stream->sink->link->cur_link_settings);
 }
 
 void core_link_disable_stream(struct pipe_ctx *pipe_ctx, int option)
 {
 	struct dc  *core_dc = pipe_ctx->stream->ctx->dc;
+
+	core_dc->hwss.blank_stream(pipe_ctx);
 
 	if (pipe_ctx->stream->signal == SIGNAL_TYPE_DISPLAY_PORT_MST)
 		deallocate_mst_payload(pipe_ctx);

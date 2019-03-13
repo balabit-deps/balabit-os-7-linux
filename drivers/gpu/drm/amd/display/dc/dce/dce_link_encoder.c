@@ -838,6 +838,9 @@ void dce110_link_encoder_hw_init(
 	cntl.coherent = false;
 	cntl.hpd_sel = enc110->base.hpd_source;
 
+	if (enc110->base.connector.id == CONNECTOR_ID_EDP)
+		cntl.signal = SIGNAL_TYPE_EDP;
+
 	result = link_transmitter_control(enc110, &cntl);
 
 	if (result != BP_RESULT_OK) {
@@ -855,8 +858,6 @@ void dce110_link_encoder_hw_init(
 
 		ASSERT(result == BP_RESULT_OK);
 
-	} else if (enc110->base.connector.id == CONNECTOR_ID_EDP) {
-		ctx->dc->hwss.edp_power_control(enc, true);
 	}
 	aux_initialize(enc110);
 
@@ -1043,8 +1044,7 @@ void dce110_link_encoder_enable_dp_mst_output(
  */
 void dce110_link_encoder_disable_output(
 	struct link_encoder *enc,
-	enum signal_type signal,
-	struct dc_link *link)
+	enum signal_type signal)
 {
 	struct dce110_link_encoder *enc110 = TO_DCE110_LINK_ENC(enc);
 	struct dc_context *ctx = enc110->base.ctx;
@@ -1055,8 +1055,6 @@ void dce110_link_encoder_disable_output(
 		/* OF_SKIP_POWER_DOWN_INACTIVE_ENCODER */
 		return;
 	}
-	if (enc110->base.connector.id == CONNECTOR_ID_EDP)
-		ctx->dc->hwss.edp_backlight_control(link, false);
 	/* Power-down RX and disable GPU PHY should be paired.
 	 * Disabling PHY without powering down RX may cause
 	 * symbol lock loss, on which we will get DP Sink interrupt. */
@@ -1087,20 +1085,6 @@ void dce110_link_encoder_disable_output(
 	/* disable encoder */
 	if (dc_is_dp_signal(signal))
 		link_encoder_disable(enc110);
-
-	if (enc110->base.connector.id == CONNECTOR_ID_EDP) {
-		/* power down eDP panel */
-		/* TODO: Power control cause regression, we should implement
-		 * it properly, for now just comment it.
-		 *
-		 * link_encoder_edp_wait_for_hpd_ready(
-			link_enc,
-			link_enc->connector,
-			false);
-
-		 * link_encoder_edp_power_control(
-				link_enc, false); */
-	}
 }
 
 void dce110_link_encoder_dp_set_lane_settings(
