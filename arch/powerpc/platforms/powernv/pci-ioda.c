@@ -1073,7 +1073,6 @@ static struct pnv_ioda_pe *pnv_ioda_setup_dev_PE(struct pci_dev *dev)
 	 * At some point we want to remove the PDN completely anyways
 	 */
 	pci_dev_get(dev);
-	pdn->pcidev = dev;
 	pdn->pe_number = pe->pe_number;
 	pe->flags = PNV_IODA_PE_DEV;
 	pe->pdev = dev;
@@ -1120,7 +1119,6 @@ static void pnv_ioda_setup_same_PE(struct pci_bus *bus, struct pnv_ioda_pe *pe)
 			continue;
 
 		pe->device_count++;
-		pdn->pcidev = dev;
 		pdn->pe_number = pe->pe_number;
 		if ((pe->flags & PNV_IODA_PE_BUS_ALL) && dev->subordinate)
 			pnv_ioda_setup_same_PE(dev->subordinate, pe);
@@ -1235,7 +1233,6 @@ static struct pnv_ioda_pe *pnv_ioda_setup_npu_PE(struct pci_dev *npu_pdev)
 			pci_dev_get(npu_pdev);
 			npu_pdn = pci_get_pdn(npu_pdev);
 			rid = npu_pdev->bus->number << 8 | npu_pdn->devfn;
-			npu_pdn->pcidev = npu_pdev;
 			npu_pdn->pe_number = pe_num;
 			phb->ioda.pe_rmap[rid] = pe->pe_number;
 
@@ -1271,25 +1268,34 @@ static void pnv_ioda_setup_npu_PEs(struct pci_bus *bus)
 
 static void pnv_pci_ioda_setup_PEs(void)
 {
-	struct pci_controller *hose, *tmp;
+	struct pci_controller *hose;
 	struct pnv_phb *phb;
 	struct pci_bus *bus;
 	struct pci_dev *pdev;
+	struct pnv_ioda_pe *pe;
 
-	list_for_each_entry_safe(hose, tmp, &hose_list, list_node) {
+	list_for_each_entry(hose, &hose_list, list_node) {
 		phb = hose->private_data;
 		if (phb->type == PNV_PHB_NPU_NVLINK) {
 			/* PE#0 is needed for error reporting */
 			pnv_ioda_reserve_pe(phb, 0);
 			pnv_ioda_setup_npu_PEs(hose->bus);
 			if (phb->model == PNV_PHB_MODEL_NPU2)
-				pnv_npu2_init(phb);
+				WARN_ON_ONCE(pnv_npu2_init(hose));
 		}
 		if (phb->type == PNV_PHB_NPU_OCAPI) {
 			bus = hose->bus;
 			list_for_each_entry(pdev, &bus->devices, bus_list)
 				pnv_ioda_setup_dev_PE(pdev);
 		}
+	}
+	list_for_each_entry(hose, &hose_list, list_node) {
+		phb = hose->private_data;
+		if (phb->type != PNV_PHB_IODA2)
+			continue;
+
+		list_for_each_entry(pe, &phb->ioda.pe_list, list)
+			pnv_npu2_map_lpar(pe, MSR_DR | MSR_PR | MSR_HV);
 	}
 }
 
@@ -2676,14 +2682,23 @@ static struct pnv_ioda_pe *gpe_table_group_to_npe(
 static long pnv_pci_ioda2_npu_set_window(struct iommu_table_group *table_group,
 		int num, struct iommu_table *tbl)
 {
+	struct pnv_ioda_pe *npe = gpe_table_group_to_npe(table_group);
+	int num2 = (num == 0) ? 1 : 0;
 	long ret = pnv_pci_ioda2_set_window(table_group, num, tbl);
 
 	if (ret)
 		return ret;
 
-	ret = pnv_npu_set_window(gpe_table_group_to_npe(table_group), num, tbl);
-	if (ret)
+	if (table_group->tables[num2])
+		pnv_npu_unset_window(npe, num2);
+
+	ret = pnv_npu_set_window(npe, num, tbl);
+	if (ret) {
 		pnv_pci_ioda2_unset_window(table_group, num);
+		if (table_group->tables[num2])
+			pnv_npu_set_window(npe, num2,
+					table_group->tables[num2]);
+	}
 
 	return ret;
 }
@@ -2692,12 +2707,24 @@ static long pnv_pci_ioda2_npu_unset_window(
 		struct iommu_table_group *table_group,
 		int num)
 {
+	struct pnv_ioda_pe *npe = gpe_table_group_to_npe(table_group);
+	int num2 = (num == 0) ? 1 : 0;
 	long ret = pnv_pci_ioda2_unset_window(table_group, num);
 
 	if (ret)
 		return ret;
 
-	return pnv_npu_unset_window(gpe_table_group_to_npe(table_group), num);
+	if (!npe->table_group.tables[num])
+		return 0;
+
+	ret = pnv_npu_unset_window(npe, num);
+	if (ret)
+		return ret;
+
+	if (table_group->tables[num2])
+		ret = pnv_npu_set_window(npe, num2, table_group->tables[num2]);
+
+	return ret;
 }
 
 static void pnv_ioda2_npu_take_ownership(struct iommu_table_group *table_group)

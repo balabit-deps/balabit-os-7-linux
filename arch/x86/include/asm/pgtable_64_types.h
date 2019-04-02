@@ -84,18 +84,25 @@ typedef struct { pteval_t pte; } pte_t;
  */
 #define MAXMEM			_AC(__AC(1, UL) << MAX_PHYSMEM_BITS, UL)
 
+#define GUARD_HOLE_PGD_ENTRY	-256UL
+#define GUARD_HOLE_SIZE		(16UL << PGDIR_SHIFT)
+#define GUARD_HOLE_BASE_ADDR	(GUARD_HOLE_PGD_ENTRY << PGDIR_SHIFT)
+#define GUARD_HOLE_END_ADDR	(GUARD_HOLE_BASE_ADDR + GUARD_HOLE_SIZE)
+
 #ifdef CONFIG_X86_5LEVEL
 # define VMALLOC_SIZE_TB	_AC(12800, UL)
 # define __VMALLOC_BASE		_AC(0xffa0000000000000, UL)
 # define __VMEMMAP_BASE		_AC(0xffd4000000000000, UL)
-# define LDT_PGD_ENTRY		_AC(-112, UL)
+# define LDT_PGD_ENTRY		_AC(-240, UL)
 # define LDT_BASE_ADDR		(LDT_PGD_ENTRY << PGDIR_SHIFT)
+# define LDT_END_ADDR		(LDT_BASE_ADDR + PGDIR_SIZE)
 #else
 # define VMALLOC_SIZE_TB	_AC(32, UL)
 # define __VMALLOC_BASE		_AC(0xffffc90000000000, UL)
 # define __VMEMMAP_BASE		_AC(0xffffea0000000000, UL)
-# define LDT_PGD_ENTRY		_AC(-3, UL)
+# define LDT_PGD_ENTRY		_AC(-240, UL)
 # define LDT_BASE_ADDR		(LDT_PGD_ENTRY << PGDIR_SHIFT)
+# define LDT_END_ADDR		(LDT_BASE_ADDR + PGDIR_SIZE)
 #endif
 
 #ifdef CONFIG_RANDOMIZE_MEMORY
@@ -123,5 +130,7 @@ typedef struct { pteval_t pte; } pte_t;
 #define EFI_VA_END		(-68 * (_AC(1, UL) << 30))
 
 #define EARLY_DYNAMIC_PAGE_TABLES	64
+
+#define PGD_KERNEL_START	((PAGE_SIZE / 2) / sizeof(pgd_t))
 
 #endif /* _ASM_X86_PGTABLE_64_DEFS_H */
