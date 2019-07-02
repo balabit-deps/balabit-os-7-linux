@@ -49,6 +49,8 @@ struct ceph_mds_reply_info_in {
 	char *inline_data;
 	u32 pool_ns_len;
 	char *pool_ns_data;
+	u64 max_bytes;
+	u64 max_files;
 };
 
 struct ceph_mds_reply_dir_entry {
@@ -151,12 +153,13 @@ struct ceph_mds_session {
 	/* protected by s_cap_lock */
 	spinlock_t        s_cap_lock;
 	struct list_head  s_caps;     /* all caps issued by this session */
+	struct ceph_cap  *s_cap_iterator;
 	int               s_nr_caps, s_trim_caps;
 	int               s_num_cap_releases;
 	int		  s_cap_reconnect;
 	int		  s_readonly;
 	struct list_head  s_cap_releases; /* waiting cap_release messages */
-	struct ceph_cap  *s_cap_iterator;
+	struct work_struct s_cap_release_work;
 
 	/* protected by mutex */
 	struct list_head  s_cap_flushing;     /* inodes w/ flushing caps */
@@ -312,6 +315,8 @@ struct ceph_mds_client {
 	int                     max_sessions;  /* len of s_mds_sessions */
 	int                     stopping;      /* true if shutting down */
 
+	atomic64_t		quotarealms_count; /* # realms with quota */
+
 	/*
 	 * snap_rwsem will cover cap linkage into snaprealms, and
 	 * realm snap contexts.  (later, we can do per-realm snap
@@ -420,9 +425,10 @@ static inline void ceph_mdsc_put_request(struct ceph_mds_request *req)
 	kref_put(&req->r_kref, ceph_mdsc_release_request);
 }
 
-extern void ceph_send_cap_releases(struct ceph_mds_client *mdsc,
-				   struct ceph_mds_session *session);
-
+extern void __ceph_queue_cap_release(struct ceph_mds_session *session,
+				    struct ceph_cap *cap);
+extern void ceph_flush_cap_releases(struct ceph_mds_client *mdsc,
+				    struct ceph_mds_session *session);
 extern void ceph_mdsc_pre_umount(struct ceph_mds_client *mdsc);
 
 extern char *ceph_mdsc_build_path(struct dentry *dentry, int *plen, u64 *base,

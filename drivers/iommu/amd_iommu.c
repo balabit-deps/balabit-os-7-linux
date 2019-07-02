@@ -3102,21 +3102,24 @@ static void amd_iommu_get_resv_regions(struct device *dev,
 		return;
 
 	list_for_each_entry(entry, &amd_iommu_unity_map, list) {
+		int type, prot = 0;
 		size_t length;
-		int prot = 0;
 
 		if (devid < entry->devid_start || devid > entry->devid_end)
 			continue;
 
+		type   = IOMMU_RESV_DIRECT;
 		length = entry->address_end - entry->address_start;
 		if (entry->prot & IOMMU_PROT_IR)
 			prot |= IOMMU_READ;
 		if (entry->prot & IOMMU_PROT_IW)
 			prot |= IOMMU_WRITE;
+		if (entry->prot & IOMMU_UNITY_MAP_FLAG_EXCL_RANGE)
+			/* Exclusion range */
+			type = IOMMU_RESV_RESERVED;
 
 		region = iommu_alloc_resv_region(entry->address_start,
-						 length, prot,
-						 IOMMU_RESV_DIRECT);
+						 length, prot, type);
 		if (!region) {
 			pr_err("Out of memory allocating dm-regions for %s\n",
 				dev_name(dev));
@@ -3820,7 +3823,8 @@ static void irte_ga_prepare(void *entry,
 	irte->lo.fields_remap.int_type    = delivery_mode;
 	irte->lo.fields_remap.dm          = dest_mode;
 	irte->hi.fields.vector            = vector;
-	irte->lo.fields_remap.destination = dest_apicid;
+	irte->lo.fields_remap.destination = APICID_TO_IRTE_DEST_LO(dest_apicid);
+	irte->hi.fields.destination       = APICID_TO_IRTE_DEST_HI(dest_apicid);
 	irte->lo.fields_remap.valid       = 1;
 }
 
@@ -3875,7 +3879,10 @@ static void irte_ga_set_affinity(void *entry, u16 devid, u16 index,
 	if (!dev_data || !dev_data->use_vapic ||
 	    !irte->lo.fields_remap.guest_mode) {
 		irte->hi.fields.vector = vector;
-		irte->lo.fields_remap.destination = dest_apicid;
+		irte->lo.fields_remap.destination =
+					APICID_TO_IRTE_DEST_LO(dest_apicid);
+		irte->hi.fields.destination =
+					APICID_TO_IRTE_DEST_HI(dest_apicid);
 		modify_irte_ga(devid, index, irte, NULL);
 	}
 }
@@ -4276,7 +4283,10 @@ static int amd_ir_set_vcpu_affinity(struct irq_data *data, void *vcpu_info)
 		irte->lo.val = 0;
 		irte->hi.fields.vector = cfg->vector;
 		irte->lo.fields_remap.guest_mode = 0;
-		irte->lo.fields_remap.destination = cfg->dest_apicid;
+		irte->lo.fields_remap.destination =
+				APICID_TO_IRTE_DEST_LO(cfg->dest_apicid);
+		irte->hi.fields.destination =
+				APICID_TO_IRTE_DEST_HI(cfg->dest_apicid);
 		irte->lo.fields_remap.int_type = apic->irq_delivery_mode;
 		irte->lo.fields_remap.dm = apic->irq_dest_mode;
 
@@ -4393,8 +4403,12 @@ int amd_iommu_update_ga(int cpu, bool is_run, void *data)
 	spin_lock_irqsave(&irt->lock, flags);
 
 	if (ref->lo.fields_vapic.guest_mode) {
-		if (cpu >= 0)
-			ref->lo.fields_vapic.destination = cpu;
+		if (cpu >= 0) {
+			ref->lo.fields_vapic.destination =
+						APICID_TO_IRTE_DEST_LO(cpu);
+			ref->hi.fields.destination =
+						APICID_TO_IRTE_DEST_HI(cpu);
+		}
 		ref->lo.fields_vapic.is_run = is_run;
 		barrier();
 	}

@@ -32,7 +32,7 @@ struct tcf_block_ext_info {
 };
 
 struct tcf_block_cb;
-bool tcf_queue_work(struct work_struct *work);
+bool tcf_queue_work(struct rcu_work *rwork, work_func_t func);
 
 #ifdef CONFIG_NET_CLS
 struct tcf_chain *tcf_chain_get(struct tcf_block *block, u32 chain_index,
@@ -240,12 +240,13 @@ struct tcf_exts {
 	int police;
 };
 
-static inline int tcf_exts_init(struct tcf_exts *exts, int action, int police)
+static inline int tcf_exts_init(struct tcf_exts *exts, struct net *net,
+				int action, int police)
 {
 #ifdef CONFIG_NET_CLS_ACT
 	exts->type = 0;
 	exts->nr_actions = 0;
-	exts->net = NULL;
+	exts->net = net;
 	exts->actions = kcalloc(TCA_ACT_MAX_PRIO, sizeof(struct tc_action *),
 				GFP_KERNEL);
 	if (!exts->actions)

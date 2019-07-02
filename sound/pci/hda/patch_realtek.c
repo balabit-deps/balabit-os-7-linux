@@ -118,6 +118,8 @@ struct alc_spec {
 	int codec_variant;	/* flag for other variants */
 	unsigned int has_alc5505_dsp:1;
 	unsigned int no_depop_delay:1;
+	unsigned int done_hp_init:1;
+	unsigned int no_shutup_pins:1;
 
 	/* for PLL fix */
 	hda_nid_t pll_nid;
@@ -429,6 +431,48 @@ static void alc_auto_setup_eapd(struct hda_codec *codec, bool on)
 		set_eapd(codec, *p, on);
 }
 
+static int find_ext_mic_pin(struct hda_codec *codec);
+
+static void alc_headset_mic_no_shutup(struct hda_codec *codec)
+{
+	const struct hda_pincfg *pin;
+	int mic_pin = find_ext_mic_pin(codec);
+	int i;
+
+	/* don't shut up pins when unloading the driver; otherwise it breaks
+	 * the default pin setup at the next load of the driver
+	 */
+	if (codec->bus->shutdown)
+		return;
+
+	for (i = 0; i < codec->init_pins.used; i++) {
+		pin = snd_array_elem(&codec->init_pins, i);
+		/* use read here for syncing after issuing each verb */
+		if (pin->nid != mic_pin)
+			snd_hda_codec_read(codec, pin->nid, 0,
+					AC_VERB_SET_PIN_WIDGET_CONTROL, 0);
+	}
+
+	codec->pins_shutup = 1;
+}
+
+static void alc_shutup_pins(struct hda_codec *codec)
+{
+	struct alc_spec *spec = codec->spec;
+
+	switch (codec->core.vendor_id) {
+	case 0x10ec0286:
+	case 0x10ec0288:
+	case 0x10ec0298:
+		alc_headset_mic_no_shutup(codec);
+		break;
+	default:
+		if (!spec->no_shutup_pins)
+			snd_hda_shutup_pins(codec);
+		break;
+	}
+}
+
 /* generic shutup callback;
  * just turning off EAPD and a little pause for avoiding pop-noise
  */
@@ -439,7 +483,7 @@ static void alc_eapd_shutup(struct hda_codec *codec)
 	alc_auto_setup_eapd(codec, false);
 	if (!spec->no_depop_delay)
 		msleep(200);
-	snd_hda_shutup_pins(codec);
+	alc_shutup_pins(codec);
 }
 
 /* generic EAPD initialization */
@@ -476,6 +520,15 @@ static void alc_auto_init_amp(struct hda_codec *codec, int type)
 	}
 }
 
+/* get a primary headphone pin if available */
+static hda_nid_t alc_get_hp_pin(struct alc_spec *spec)
+{
+	if (spec->gen.autocfg.hp_pins[0])
+		return spec->gen.autocfg.hp_pins[0];
+	if (spec->gen.autocfg.line_out_type == AC_JACK_HP_OUT)
+		return spec->gen.autocfg.line_out_pins[0];
+	return 0;
+}
 
 /*
  * Realtek SSID verification
@@ -684,9 +737,7 @@ do_sku:
 	 * 15   : 1 --> enable the function "Mute internal speaker
 	 *	        when the external headphone out jack is plugged"
 	 */
-	if (!spec->gen.autocfg.hp_pins[0] &&
-	    !(spec->gen.autocfg.line_out_pins[0] &&
-	      spec->gen.autocfg.line_out_type == AUTO_PIN_HP_OUT)) {
+	if (!alc_get_hp_pin(spec)) {
 		hda_nid_t nid;
 		tmp = (ass >> 11) & 0x3;	/* HP to chassis */
 		nid = ports[tmp];
@@ -796,7 +847,7 @@ static inline void alc_shutup(struct hda_codec *codec)
 	if (spec && spec->shutup)
 		spec->shutup(codec);
 	else
-		snd_hda_shutup_pins(codec);
+		alc_shutup_pins(codec);
 }
 
 static void alc_reboot_notify(struct hda_codec *codec)
@@ -2856,27 +2907,6 @@ static int alc269_parse_auto_config(struct hda_codec *codec)
 	return alc_parse_auto_config(codec, alc269_ignore, ssids);
 }
 
-static int find_ext_mic_pin(struct hda_codec *codec);
-
-static void alc286_shutup(struct hda_codec *codec)
-{
-	int i;
-	int mic_pin = find_ext_mic_pin(codec);
-	/* don't shut up pins when unloading the driver; otherwise it breaks
-	 * the default pin setup at the next load of the driver
-	 */
-	if (codec->bus->shutdown)
-		return;
-	for (i = 0; i < codec->init_pins.used; i++) {
-		struct hda_pincfg *pin = snd_array_elem(&codec->init_pins, i);
-		/* use read here for syncing after issuing each verb */
-		if (pin->nid != mic_pin)
-			snd_hda_codec_read(codec, pin->nid, 0,
-					AC_VERB_SET_PIN_WIDGET_CONTROL, 0);
-	}
-	codec->pins_shutup = 1;
-}
-
 static void alc269vb_toggle_power_output(struct hda_codec *codec, int power_up)
 {
 	alc_update_coef_idx(codec, 0x04, 1 << 11, power_up ? (1 << 11) : 0);
@@ -2892,7 +2922,7 @@ static void alc269_shutup(struct hda_codec *codec)
 			(alc_get_coef0(codec) & 0x00ff) == 0x018) {
 		msleep(150);
 	}
-	snd_hda_shutup_pins(codec);
+	alc_shutup_pins(codec);
 }
 
 static struct coef_fw alc282_coefs[] = {
@@ -2936,7 +2966,7 @@ static void alc282_restore_default_value(struct hda_codec *codec)
 static void alc282_init(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 	bool hp_pin_sense;
 	int coef78;
 
@@ -2973,7 +3003,7 @@ static void alc282_init(struct hda_codec *codec)
 static void alc282_shutup(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 	bool hp_pin_sense;
 	int coef78;
 
@@ -2995,14 +3025,15 @@ static void alc282_shutup(struct hda_codec *codec)
 	if (hp_pin_sense)
 		msleep(85);
 
-	snd_hda_codec_write(codec, hp_pin, 0,
-			    AC_VERB_SET_PIN_WIDGET_CONTROL, 0x0);
+	if (!spec->no_shutup_pins)
+		snd_hda_codec_write(codec, hp_pin, 0,
+				    AC_VERB_SET_PIN_WIDGET_CONTROL, 0x0);
 
 	if (hp_pin_sense)
 		msleep(100);
 
 	alc_auto_setup_eapd(codec, false);
-	snd_hda_shutup_pins(codec);
+	alc_shutup_pins(codec);
 	alc_write_coef_idx(codec, 0x78, coef78);
 }
 
@@ -3051,13 +3082,8 @@ static void alc283_restore_default_value(struct hda_codec *codec)
 static void alc283_init(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 	bool hp_pin_sense;
-
-	if (!spec->gen.autocfg.hp_outs) {
-		if (spec->gen.autocfg.line_out_type == AC_JACK_HP_OUT)
-			hp_pin = spec->gen.autocfg.line_out_pins[0];
-	}
 
 	alc283_restore_default_value(codec);
 
@@ -3092,13 +3118,8 @@ static void alc283_init(struct hda_codec *codec)
 static void alc283_shutup(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 	bool hp_pin_sense;
-
-	if (!spec->gen.autocfg.hp_outs) {
-		if (spec->gen.autocfg.line_out_type == AC_JACK_HP_OUT)
-			hp_pin = spec->gen.autocfg.line_out_pins[0];
-	}
 
 	if (!hp_pin) {
 		alc269_shutup(codec);
@@ -3118,22 +3139,23 @@ static void alc283_shutup(struct hda_codec *codec)
 	if (hp_pin_sense)
 		msleep(100);
 
-	snd_hda_codec_write(codec, hp_pin, 0,
-			    AC_VERB_SET_PIN_WIDGET_CONTROL, 0x0);
+	if (!spec->no_shutup_pins)
+		snd_hda_codec_write(codec, hp_pin, 0,
+				    AC_VERB_SET_PIN_WIDGET_CONTROL, 0x0);
 
 	alc_update_coef_idx(codec, 0x46, 0, 3 << 12);
 
 	if (hp_pin_sense)
 		msleep(100);
 	alc_auto_setup_eapd(codec, false);
-	snd_hda_shutup_pins(codec);
+	alc_shutup_pins(codec);
 	alc_write_coef_idx(codec, 0x43, 0x9614);
 }
 
 static void alc256_init(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 	bool hp_pin_sense;
 
 	if (!hp_pin)
@@ -3169,7 +3191,7 @@ static void alc256_init(struct hda_codec *codec)
 static void alc256_shutup(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 	bool hp_pin_sense;
 
 	if (!hp_pin) {
@@ -3192,20 +3214,21 @@ static void alc256_shutup(struct hda_codec *codec)
 	/* NOTE: call this before clearing the pin, otherwise codec stalls */
 	alc_update_coef_idx(codec, 0x46, 0, 3 << 12);
 
-	snd_hda_codec_write(codec, hp_pin, 0,
-			    AC_VERB_SET_PIN_WIDGET_CONTROL, 0x0);
+	if (!spec->no_shutup_pins)
+		snd_hda_codec_write(codec, hp_pin, 0,
+				    AC_VERB_SET_PIN_WIDGET_CONTROL, 0x0);
 
 	if (hp_pin_sense)
 		msleep(100);
 
 	alc_auto_setup_eapd(codec, false);
-	snd_hda_shutup_pins(codec);
+	alc_shutup_pins(codec);
 }
 
 static void alc225_init(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 	bool hp1_pin_sense, hp2_pin_sense;
 
 	if (!hp_pin)
@@ -3248,7 +3271,7 @@ static void alc225_init(struct hda_codec *codec)
 static void alc225_shutup(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 	bool hp1_pin_sense, hp2_pin_sense;
 
 	if (!hp_pin) {
@@ -3286,13 +3309,13 @@ static void alc225_shutup(struct hda_codec *codec)
 		msleep(100);
 
 	alc_auto_setup_eapd(codec, false);
-	snd_hda_shutup_pins(codec);
+	alc_shutup_pins(codec);
 }
 
 static void alc_default_init(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 	bool hp_pin_sense;
 
 	if (!hp_pin)
@@ -3321,7 +3344,7 @@ static void alc_default_init(struct hda_codec *codec)
 static void alc_default_shutup(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 	bool hp_pin_sense;
 
 	if (!hp_pin) {
@@ -3340,14 +3363,57 @@ static void alc_default_shutup(struct hda_codec *codec)
 	if (hp_pin_sense)
 		msleep(85);
 
-	snd_hda_codec_write(codec, hp_pin, 0,
-			    AC_VERB_SET_PIN_WIDGET_CONTROL, 0x0);
+	if (!spec->no_shutup_pins)
+		snd_hda_codec_write(codec, hp_pin, 0,
+				    AC_VERB_SET_PIN_WIDGET_CONTROL, 0x0);
 
 	if (hp_pin_sense)
 		msleep(100);
 
 	alc_auto_setup_eapd(codec, false);
-	snd_hda_shutup_pins(codec);
+	alc_shutup_pins(codec);
+}
+
+static void alc294_hp_init(struct hda_codec *codec)
+{
+	struct alc_spec *spec = codec->spec;
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
+	int i, val;
+
+	if (!hp_pin)
+		return;
+
+	snd_hda_codec_write(codec, hp_pin, 0,
+			    AC_VERB_SET_AMP_GAIN_MUTE, AMP_OUT_MUTE);
+
+	msleep(100);
+
+	snd_hda_codec_write(codec, hp_pin, 0,
+			    AC_VERB_SET_PIN_WIDGET_CONTROL, 0x0);
+
+	alc_update_coef_idx(codec, 0x6f, 0x000f, 0);/* Set HP depop to manual mode */
+	alc_update_coefex_idx(codec, 0x58, 0x00, 0x8000, 0x8000); /* HP depop procedure start */
+
+	/* Wait for depop procedure finish  */
+	val = alc_read_coefex_idx(codec, 0x58, 0x01);
+	for (i = 0; i < 20 && val & 0x0080; i++) {
+		msleep(50);
+		val = alc_read_coefex_idx(codec, 0x58, 0x01);
+	}
+	/* Set HP depop to auto mode */
+	alc_update_coef_idx(codec, 0x6f, 0x000f, 0x000b);
+	msleep(50);
+}
+
+static void alc294_init(struct hda_codec *codec)
+{
+	struct alc_spec *spec = codec->spec;
+
+	if (!spec->done_hp_init) {
+		alc294_hp_init(codec);
+		spec->done_hp_init = true;
+	}
+	alc_default_init(codec);
 }
 
 static void alc5505_coef_set(struct hda_codec *codec, unsigned int index_reg,
@@ -4780,7 +4846,7 @@ static void alc_update_headset_mode(struct hda_codec *codec)
 	struct alc_spec *spec = codec->spec;
 
 	hda_nid_t mux_pin = spec->gen.imux_pins[spec->gen.cur_mux[0]];
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
+	hda_nid_t hp_pin = alc_get_hp_pin(spec);
 
 	int new_headset_mode;
 
@@ -4981,16 +5047,12 @@ static void alc_fixup_auto_mute_via_amp(struct hda_codec *codec,
 	}
 }
 
-static void alc_no_shutup(struct hda_codec *codec)
-{
-}
-
 static void alc_fixup_no_shutup(struct hda_codec *codec,
 				const struct hda_fixup *fix, int action)
 {
 	if (action == HDA_FIXUP_ACT_PROBE) {
 		struct alc_spec *spec = codec->spec;
-		spec->shutup = alc_no_shutup;
+		spec->no_shutup_pins = 1;
 	}
 }
 
@@ -5049,7 +5111,7 @@ static void alc_fixup_tpt470_dock(struct hda_codec *codec,
 static void alc_shutup_dell_xps13(struct hda_codec *codec)
 {
 	struct alc_spec *spec = codec->spec;
-	int hp_pin = spec->gen.autocfg.hp_pins[0];
+	int hp_pin = alc_get_hp_pin(spec);
 
 	/* Prevent pop noises when headphones are plugged in */
 	snd_hda_codec_write(codec, hp_pin, 0,
@@ -5143,7 +5205,7 @@ static void alc271_hp_gate_mic_jack(struct hda_codec *codec,
 
 	if (action == HDA_FIXUP_ACT_PROBE) {
 		int mic_pin = find_ext_mic_pin(codec);
-		int hp_pin = spec->gen.autocfg.hp_pins[0];
+		int hp_pin = alc_get_hp_pin(spec);
 
 		if (snd_BUG_ON(!mic_pin || !hp_pin))
 			return;
@@ -6548,6 +6610,7 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
 	SND_PCI_QUIRK(0x1028, 0x0704, "Dell XPS 13 9350", ALC256_FIXUP_DELL_XPS_13_HEADPHONE_NOISE),
 	SND_PCI_QUIRK(0x1028, 0x0706, "Dell Inspiron 7559", ALC256_FIXUP_DELL_INSPIRON_7559_SUBWOOFER),
 	SND_PCI_QUIRK(0x1028, 0x0725, "Dell Inspiron 3162", ALC255_FIXUP_DELL_SPK_NOISE),
+	SND_PCI_QUIRK(0x1028, 0x0738, "Dell Precision 5820", ALC269_FIXUP_NO_SHUTUP),
 	SND_PCI_QUIRK(0x1028, 0x075b, "Dell XPS 13 9360", ALC256_FIXUP_DELL_XPS_13_HEADPHONE_NOISE),
 	SND_PCI_QUIRK(0x1028, 0x075d, "Dell AIO", ALC298_FIXUP_SPK_VOLUME),
 	SND_PCI_QUIRK(0x1028, 0x07b0, "Dell Precision 7520", ALC295_FIXUP_DISABLE_DAC3),
@@ -6672,6 +6735,10 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
 	SND_PCI_QUIRK(0x1458, 0xfa53, "Gigabyte BXBT-2807", ALC283_FIXUP_HEADSET_MIC),
 	SND_PCI_QUIRK(0x1462, 0xb120, "MSI Cubi MS-B120", ALC283_FIXUP_HEADSET_MIC),
 	SND_PCI_QUIRK(0x1558, 0x1325, "System76 Darter Pro (darp5)", ALC293_FIXUP_SYSTEM76_MIC_NO_PRESENCE),
+	SND_PCI_QUIRK(0x1558, 0x8550, "System76 Gazelle (gaze14)", ALC293_FIXUP_SYSTEM76_MIC_NO_PRESENCE),
+	SND_PCI_QUIRK(0x1558, 0x8551, "System76 Gazelle (gaze14)", ALC293_FIXUP_SYSTEM76_MIC_NO_PRESENCE),
+	SND_PCI_QUIRK(0x1558, 0x8560, "System76 Gazelle (gaze14)", ALC269_FIXUP_HEADSET_MIC),
+	SND_PCI_QUIRK(0x1558, 0x8561, "System76 Gazelle (gaze14)", ALC269_FIXUP_HEADSET_MIC),
 	SND_PCI_QUIRK(0x17aa, 0x1036, "Lenovo P520", ALC233_FIXUP_LENOVO_MULTI_CODECS),
 	SND_PCI_QUIRK(0x17aa, 0x20f2, "Thinkpad SL410/510", ALC269_FIXUP_SKU_IGNORE),
 	SND_PCI_QUIRK(0x17aa, 0x215e, "Thinkpad L512", ALC269_FIXUP_SKU_IGNORE),
@@ -7243,37 +7310,6 @@ static void alc269_fill_coef(struct hda_codec *codec)
 	alc_update_coef_idx(codec, 0x4, 0, 1<<11);
 }
 
-static void alc294_hp_init(struct hda_codec *codec)
-{
-	struct alc_spec *spec = codec->spec;
-	hda_nid_t hp_pin = spec->gen.autocfg.hp_pins[0];
-	int i, val;
-
-	if (!hp_pin)
-		return;
-
-	snd_hda_codec_write(codec, hp_pin, 0,
-			    AC_VERB_SET_AMP_GAIN_MUTE, AMP_OUT_MUTE);
-
-	msleep(100);
-
-	snd_hda_codec_write(codec, hp_pin, 0,
-			    AC_VERB_SET_PIN_WIDGET_CONTROL, 0x0);
-
-	alc_update_coef_idx(codec, 0x6f, 0x000f, 0);/* Set HP depop to manual mode */
-	alc_update_coefex_idx(codec, 0x58, 0x00, 0x8000, 0x8000); /* HP depop procedure start */
-
-	/* Wait for depop procedure finish  */
-	val = alc_read_coefex_idx(codec, 0x58, 0x01);
-	for (i = 0; i < 20 && val & 0x0080; i++) {
-		msleep(50);
-		val = alc_read_coefex_idx(codec, 0x58, 0x01);
-	}
-	/* Set HP depop to auto mode */
-	alc_update_coef_idx(codec, 0x6f, 0x000f, 0x000b);
-	msleep(50);
-}
-
 /*
  */
 static int patch_alc269(struct hda_codec *codec)
@@ -7364,7 +7400,6 @@ static int patch_alc269(struct hda_codec *codec)
 	case 0x10ec0286:
 	case 0x10ec0288:
 		spec->codec_variant = ALC269_TYPE_ALC286;
-		spec->shutup = alc286_shutup;
 		break;
 	case 0x10ec0298:
 		spec->codec_variant = ALC269_TYPE_ALC298;
@@ -7412,7 +7447,7 @@ static int patch_alc269(struct hda_codec *codec)
 		spec->codec_variant = ALC269_TYPE_ALC294;
 		spec->gen.mixer_nid = 0; /* ALC2x4 does not have any loopback mixer path */
 		alc_update_coef_idx(codec, 0x6b, 0x0018, (1<<4) | (1<<3)); /* UAJ MIC Vref control by verb */
-		alc294_hp_init(codec);
+		spec->init_hook = alc294_init;
 		break;
 	case 0x10ec0700:
 	case 0x10ec0701:
@@ -7420,7 +7455,7 @@ static int patch_alc269(struct hda_codec *codec)
 		spec->codec_variant = ALC269_TYPE_ALC700;
 		spec->gen.mixer_nid = 0; /* ALC700 does not have any loopback mixer path */
 		alc_update_coef_idx(codec, 0x4a, 1 << 15, 0); /* Combo jack auto trigger control */
-		alc294_hp_init(codec);
+		spec->init_hook = alc294_init;
 		break;
 
 	}

@@ -375,7 +375,7 @@ int ceph_atomic_open(struct inode *dir, struct dentry *dentry,
 	struct ceph_mds_request *req;
 	struct dentry *dn;
 	struct ceph_acls_info acls = {};
-       int mask;
+	int mask;
 	int err;
 
 	dout("atomic_open %p dentry %p '%pd' %s flags %d mode 0%o\n",
@@ -386,6 +386,8 @@ int ceph_atomic_open(struct inode *dir, struct dentry *dentry,
 		return -ENAMETOOLONG;
 
 	if (flags & O_CREAT) {
+		if (ceph_quota_is_max_files_exceeded(dir))
+			return -EDQUOT;
 		err = ceph_pre_init_acls(dir, &mode, &acls);
 		if (err < 0)
 			return err;
@@ -720,7 +722,7 @@ static void ceph_aio_complete_req(struct ceph_osd_request *req)
 		if (aio_work) {
 			INIT_WORK(&aio_work->work, ceph_aio_retry_work);
 			aio_work->req = req;
-			queue_work(ceph_inode_to_client(inode)->wb_wq,
+			queue_work(ceph_inode_to_client(inode)->inode_wq,
 				   &aio_work->work);
 			return;
 		}
@@ -1338,6 +1340,11 @@ retry_snap:
 
 	pos = iocb->ki_pos;
 	count = iov_iter_count(from);
+	if (ceph_quota_is_max_bytes_exceeded(inode, pos + count)) {
+		err = -EDQUOT;
+		goto out;
+	}
+
 	err = file_remove_privs(file);
 	if (err)
 		goto out;
@@ -1419,6 +1426,7 @@ retry_snap:
 
 	if (written >= 0) {
 		int dirty;
+
 		spin_lock(&ci->i_ceph_lock);
 		ci->i_inline_version = CEPH_INLINE_NONE;
 		dirty = __ceph_mark_dirty_caps(ci, CEPH_CAP_FILE_WR,
@@ -1426,6 +1434,8 @@ retry_snap:
 		spin_unlock(&ci->i_ceph_lock);
 		if (dirty)
 			__mark_inode_dirty(inode, dirty);
+		if (ceph_quota_is_max_bytes_approaching(inode, iocb->ki_pos))
+			ceph_check_caps(ci, CHECK_CAPS_NODELAY, NULL);
 	}
 
 	dout("aio_write %p %llx.%llx %llu~%u  dropping cap refs on %s\n",
@@ -1668,6 +1678,12 @@ static long ceph_fallocate(struct file *file, int mode,
 		goto unlock;
 	}
 
+	if (!(mode & (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE)) &&
+	    ceph_quota_is_max_bytes_exceeded(inode, offset + length)) {
+		ret = -EDQUOT;
+		goto unlock;
+	}
+
 	if (ceph_osdmap_flag(osdc, CEPH_OSDMAP_FULL) &&
 	    !(mode & FALLOC_FL_PUNCH_HOLE)) {
 		ret = -ENOSPC;
@@ -1716,6 +1732,9 @@ static long ceph_fallocate(struct file *file, int mode,
 		spin_unlock(&ci->i_ceph_lock);
 		if (dirty)
 			__mark_inode_dirty(inode, dirty);
+		if ((endoff > size) &&
+		    ceph_quota_is_max_bytes_approaching(inode, endoff))
+			ceph_check_caps(ci, CHECK_CAPS_NODELAY, NULL);
 	}
 
 	ceph_put_cap_refs(ci, got);
