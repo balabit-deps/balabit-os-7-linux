@@ -574,6 +574,9 @@ static u32 skx_deadline_rev(void)
 	case 0x04: return 0x02000014;
 	}
 
+	if (boot_cpu_data.x86_stepping > 4)
+		return 0;
+
 	return ~0U;
 }
 
@@ -2181,6 +2184,7 @@ static int cpuid_to_apicid[] = {
 	[0 ... NR_CPUS - 1] = -1,
 };
 
+#ifdef CONFIG_SMP
 /**
  * apic_id_is_primary_thread - Check whether APIC ID belongs to a primary thread
  * @id:	APIC ID to check
@@ -2194,6 +2198,17 @@ bool apic_id_is_primary_thread(unsigned int apicid)
 	/* Isolate the SMT bit(s) in the APICID and check for 0 */
 	mask = (1U << (fls(smp_num_siblings) - 1)) - 1;
 	return !(apicid & mask);
+}
+#endif
+
+/**
+ * apic_id_disabled - Check whether APIC ID is disabled via SMT control
+ * @id:	APIC ID to check
+ */
+bool apic_id_disabled(unsigned int id)
+{
+	return (cpu_smt_control == CPU_SMT_FORCE_DISABLED &&
+		!apic_id_is_primary_thread(id));
 }
 
 /*
@@ -2288,6 +2303,15 @@ int generic_processor_info(int apicid, int version)
 			   max, thiscpu, apicid);
 
 		disabled_cpus++;
+		return -EINVAL;
+	}
+
+	/*
+	 * If SMT is force disabled and the APIC ID belongs to
+	 * a secondary thread, ignore it.
+	 */
+	if (apic_id_disabled(apicid)) {
+		pr_info_once("Ignoring secondary SMT threads\n");
 		return -EINVAL;
 	}
 

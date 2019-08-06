@@ -4556,6 +4556,7 @@ static const struct ata_blacklist_entry ata_device_blacklist [] = {
 	{ "Crucial_CT960M500*",		NULL,	ATA_HORKAGE_NO_NCQ_TRIM |
 						ATA_HORKAGE_ZERO_AFTER_TRIM |
 						ATA_HORKAGE_NOLPM, },
+	{ "SAMSUNG MZ7TD256HAFV-000L9", NULL,       ATA_HORKAGE_NOLPM, },
 
 	/* devices that don't properly handle queued TRIM commands */
 	{ "Micron_M500IT_*",		"MU01",	ATA_HORKAGE_NO_NCQ_TRIM |
@@ -5362,10 +5363,20 @@ void ata_qc_complete(struct ata_queued_cmd *qc)
  */
 int ata_qc_complete_multiple(struct ata_port *ap, u32 qc_active)
 {
+	u64 done_mask, ap_qc_active = ap->qc_active;
 	int nr_done = 0;
-	u32 done_mask;
 
-	done_mask = ap->qc_active ^ qc_active;
+	/*
+	 * If the internal tag is set on ap->qc_active, then we care about
+	 * bit0 on the passed in qc_active mask. Move that bit up to match
+	 * the internal tag.
+	 */
+	if (ap_qc_active & (1ULL << ATA_TAG_INTERNAL)) {
+		qc_active |= (qc_active & 0x01) << ATA_TAG_INTERNAL;
+		qc_active ^= qc_active & 0x01;
+	}
+
+	done_mask = ap_qc_active ^ qc_active;
 
 	if (unlikely(done_mask & qc_active)) {
 		ata_port_err(ap, "illegal qc_active transition (%08x->%08x)\n",

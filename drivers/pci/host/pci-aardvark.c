@@ -851,7 +851,7 @@ static int advk_pcie_parse_request_of_pci_ranges(struct advk_pcie *pcie)
 					     0,	0xF8000000, 0,
 					     lower_32_bits(res->start),
 					     OB_PCIE_IO);
-			err = pci_remap_iospace(res, iobase);
+			err = devm_pci_remap_iospace(dev, res, iobase);
 			if (err) {
 				dev_warn(dev, "error %d: failed to map resource %pR\n",
 					 err, res);
@@ -954,6 +954,7 @@ static int advk_pcie_probe(struct platform_device *pdev)
 
 	bus = bridge->bus;
 
+	pci_bus_size_bridges(bus);
 	pci_bus_assign_resources(bus);
 
 	list_for_each_entry(child, &bus->children, node)
