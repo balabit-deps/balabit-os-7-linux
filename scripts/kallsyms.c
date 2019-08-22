@@ -123,8 +123,8 @@ static int read_symbol(FILE *in, struct sym_entry *s)
 			fprintf(stderr, "Read error or end of file.\n");
 		return -1;
 	}
-	if (strlen(str) > KSYM_NAME_LEN) {
-		fprintf(stderr, "Symbol %s too long for kallsyms (%zu vs %d).\n"
+	if (strlen(str) >= KSYM_NAME_LEN) {
+		fprintf(stderr, "Symbol %s too long for kallsyms (%zu >= %d).\n"
 				"Please increase KSYM_NAME_LEN both in kernel and kallsyms.c\n",
 			str, strlen(str), KSYM_NAME_LEN);
 		return -1;
@@ -159,6 +159,9 @@ static int read_symbol(FILE *in, struct sym_entry *s)
 		return -1;
 	/* exclude debugging symbols */
 	else if (stype == 'N' || stype == 'n')
+		return -1;
+	/* exclude s390 kasan local symbols */
+	else if (!strncmp(sym, ".LASANPC", 8))
 		return -1;
 
 	/* include the type field in the symbol name, so that it gets
@@ -221,6 +224,7 @@ static int symbol_valid(struct sym_entry *s)
 
 	static char *special_prefixes[] = {
 		"__crc_",		/* modversions */
+		"__efistub_",		/* arm64 EFI stub namespace */
 		NULL };
 
 	static char *special_suffixes[] = {

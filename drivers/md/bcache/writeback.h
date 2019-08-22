@@ -8,6 +8,13 @@
 #define WRITEBACK_RATE_UPDATE_SECS_MAX		60
 #define WRITEBACK_RATE_UPDATE_SECS_DEFAULT	5
 
+/*
+ * 14 (16384ths) is chosen here as something that each backing device
+ * should be a reasonable fraction of the share, and not to blow up
+ * until individual backing devices are a petabyte.
+ */
+#define WRITEBACK_SHARE_SHIFT   14
+
 static inline uint64_t bcache_dev_sectors_dirty(struct bcache_device *d)
 {
 	uint64_t i, ret = 0;
@@ -29,7 +36,7 @@ static inline uint64_t  bcache_flash_devs_sectors_dirty(struct cache_set *c)
 
 		if (!d || !UUID_FLASH_ONLY(&c->uuids[i]))
 			continue;
-	   ret += bcache_dev_sectors_dirty(d);
+		ret += bcache_dev_sectors_dirty(d);
 	}
 
 	mutex_unlock(&bch_register_lock);
@@ -70,6 +77,9 @@ static inline bool should_writeback(struct cached_dev *dc, struct bio *bio,
 	if (cache_mode != CACHE_MODE_WRITEBACK ||
 	    test_bit(BCACHE_DEV_DETACHING, &dc->disk.flags) ||
 	    in_use > CUTOFF_WRITEBACK_SYNC)
+		return false;
+
+	if (bio_op(bio) == REQ_OP_DISCARD)
 		return false;
 
 	if (bio_op(bio) == REQ_OP_DISCARD)

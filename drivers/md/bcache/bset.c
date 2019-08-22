@@ -825,12 +825,22 @@ unsigned bch_btree_insert_key(struct btree_keys *b, struct bkey *k,
 	struct bset *i = bset_tree_last(b)->data;
 	struct bkey *m, *prev = NULL;
 	struct btree_iter iter;
+	struct bkey preceding_key_on_stack = ZERO_KEY;
+	struct bkey *preceding_key_p = &preceding_key_on_stack;
 
 	BUG_ON(b->ops->is_extents && !KEY_SIZE(k));
 
-	m = bch_btree_iter_init(b, &iter, b->ops->is_extents
-				? PRECEDING_KEY(&START_KEY(k))
-				: PRECEDING_KEY(k));
+	/*
+	 * If k has preceding key, preceding_key_p will be set to address
+	 *  of k's preceding key; otherwise preceding_key_p will be set
+	 * to NULL inside preceding_key().
+	 */
+	if (b->ops->is_extents)
+		preceding_key(&START_KEY(k), &preceding_key_p);
+	else
+		preceding_key(k, &preceding_key_p);
+
+	m = bch_btree_iter_init(b, &iter, preceding_key_p);
 
 	if (b->ops->insert_fixup(b, k, &iter, replace_key))
 		return status;
@@ -1072,7 +1082,7 @@ EXPORT_SYMBOL(bch_btree_iter_init);
 static inline struct bkey *__bch_btree_iter_next(struct btree_iter *iter,
 						 btree_iter_cmp_fn *cmp)
 {
-	struct btree_iter_set unused;
+	struct btree_iter_set b __maybe_unused;
 	struct bkey *ret = NULL;
 
 	if (!btree_iter_end(iter)) {
@@ -1087,7 +1097,7 @@ static inline struct bkey *__bch_btree_iter_next(struct btree_iter *iter,
 		}
 
 		if (iter->data->k == iter->data->end)
-			heap_pop(iter, unused, cmp);
+			heap_pop(iter, b, cmp);
 		else
 			heap_sift(iter, 0, cmp);
 	}

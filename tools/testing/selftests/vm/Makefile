@@ -22,6 +22,9 @@ TEST_GEN_FILES += gup_benchmark
 
 TEST_PROGS := run_vmtests
 
+TEST_FILES := test_vmalloc.sh
+
+KSFT_KHDR_INSTALL := 1
 include ../lib.mk
 
 $(OUTPUT)/userfaultfd: LDLIBS += -lpthread
