@@ -1,3 +1,16 @@
+linux (4.15.0-64.73) bionic; urgency=medium
+
+  * powerpc/tm: Fix restoring FP/VMX facility incorrectly on interrupts
+    (CVE-2019-15031) / powerpc/tm: Fix FP/VMX unavailable exceptions inside a
+    transaction (CVE-2019-15030) (LP: #1843533) // CVE-2019-15031
+    - powerpc/tm: Fix FP/VMX unavailable exceptions inside a transaction
+    - powerpc/tm: Fix restoring FP/VMX facility incorrectly on interrupts
+
+  * CVE-2019-14835
+    - vhost: fix dirty log buffer overflow
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Thu, 12 Sep 2019 11:30:41 +0200
+
 linux (4.15.0-62.69) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-62.69 -proposed tracker (LP: #1842746)
