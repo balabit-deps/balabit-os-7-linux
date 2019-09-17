@@ -1079,6 +1079,7 @@ struct kvm_x86_ops {
 	int (*update_pi_irte)(struct kvm *kvm, unsigned int host_irq,
 			      uint32_t guest_irq, bool set);
 	void (*apicv_post_state_restore)(struct kvm_vcpu *vcpu);
+	bool (*dy_apicv_has_pending_interrupt)(struct kvm_vcpu *vcpu);
 
 	int (*set_hv_timer)(struct kvm_vcpu *vcpu, u64 guest_deadline_tsc);
 	void (*cancel_hv_timer)(struct kvm_vcpu *vcpu);
@@ -1188,6 +1189,13 @@ static inline int emulate_instruction(struct kvm_vcpu *vcpu,
 {
 	return x86_emulate_instruction(vcpu, 0,
 			emulation_type | EMULTYPE_NO_REEXECUTE, NULL, 0);
+}
+
+static inline int kvm_emulate_instruction_from_buffer(struct kvm_vcpu *vcpu,
+						      void *insn, int insn_len)
+{
+	return x86_emulate_instruction(vcpu, 0, EMULTYPE_NO_REEXECUTE,
+				       insn, insn_len);
 }
 
 void kvm_enable_efer_bits(u64);

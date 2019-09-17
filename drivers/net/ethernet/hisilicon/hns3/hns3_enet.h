@@ -570,18 +570,16 @@ union l4_hdr_info {
 	unsigned char *hdr;
 };
 
-/* the distance between [begin, end) in a ring buffer
- * note: there is a unuse slot between the begin and the end
- */
-static inline int ring_dist(struct hns3_enet_ring *ring, int begin, int end)
-{
-	return (end - begin + ring->desc_num) % ring->desc_num;
-}
-
 static inline int ring_space(struct hns3_enet_ring *ring)
 {
-	return ring->desc_num -
-		ring_dist(ring, ring->next_to_clean, ring->next_to_use) - 1;
+	/* This smp_load_acquire() pairs with smp_store_release() in
+	 * hns3_nic_reclaim_one_desc called by hns3_clean_tx_ring.
+	 */
+	int begin = smp_load_acquire(&ring->next_to_clean);
+	int end = READ_ONCE(ring->next_to_use);
+
+	return ((end >= begin) ? (ring->desc_num - end + begin) :
+			(begin - end)) - 1;
 }
 
 static inline int is_ring_empty(struct hns3_enet_ring *ring)

@@ -302,16 +302,23 @@ static inline struct net_bridge_port *br_port_get_rtnl_rcu(const struct net_devi
 		rcu_dereference_rtnl(dev->rx_handler_data) : NULL;
 }
 
+enum net_bridge_opts {
+	BROPT_VLAN_ENABLED,
+	BROPT_VLAN_STATS_ENABLED,
+	BROPT_NF_CALL_IPTABLES,
+	BROPT_NF_CALL_IP6TABLES,
+	BROPT_NF_CALL_ARPTABLES,
+};
+
 struct net_bridge {
 	spinlock_t			lock;
 	spinlock_t			hash_lock;
 	struct list_head		port_list;
 	struct net_device		*dev;
 	struct pcpu_sw_netstats		__percpu *stats;
+	unsigned long			options;
 	/* These fields are accessed on each packet */
 #ifdef CONFIG_BRIDGE_VLAN_FILTERING
-	u8				vlan_enabled;
-	u8				vlan_stats_enabled;
 	__be16				vlan_proto;
 	u16				default_pvid;
 	struct net_bridge_vlan_group	__rcu *vlgrp;
@@ -323,9 +330,6 @@ struct net_bridge {
 		struct rtable		fake_rtable;
 		struct rt6_info		fake_rt6_info;
 	};
-	bool				nf_call_iptables;
-	bool				nf_call_ip6tables;
-	bool				nf_call_arptables;
 #endif
 	u16				group_fwd_mask;
 	u16				group_fwd_mask_required;
@@ -481,6 +485,14 @@ static inline bool br_vlan_should_use(const struct net_bridge_vlan *v)
 
 	return true;
 }
+
+static inline int br_opt_get(const struct net_bridge *br,
+			     enum net_bridge_opts opt)
+{
+	return test_bit(opt, &br->options);
+}
+
+void br_opt_toggle(struct net_bridge *br, enum net_bridge_opts opt, bool on);
 
 /* br_device.c */
 void br_dev_setup(struct net_device *dev);
