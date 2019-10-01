@@ -5175,7 +5175,7 @@ static int megasas_init_fw(struct megasas_instance *instance)
 {
 	u32 max_sectors_1;
 	u32 max_sectors_2, tmp_sectors, msix_enable;
-	u32 scratch_pad_2, scratch_pad_3, scratch_pad_4;
+	u32 scratch_pad_2, scratch_pad_3, scratch_pad_4, status_reg;
 	resource_size_t base_addr;
 	struct megasas_register_set __iomem *reg_set;
 	struct megasas_ctrl_info *ctrl_info = NULL;
@@ -5183,6 +5183,7 @@ static int megasas_init_fw(struct megasas_instance *instance)
 	int i, j, loop, fw_msix_count = 0;
 	struct IOV_111 *iovPtr;
 	struct fusion_context *fusion;
+	bool do_adp_reset = true;
 
 	fusion = instance->ctrl_context;
 
@@ -5231,19 +5232,29 @@ static int megasas_init_fw(struct megasas_instance *instance)
 	}
 
 	if (megasas_transition_to_ready(instance, 0)) {
-		atomic_set(&instance->fw_reset_no_pci_access, 1);
-		instance->instancet->adp_reset
-			(instance, instance->reg_set);
-		atomic_set(&instance->fw_reset_no_pci_access, 0);
-		dev_info(&instance->pdev->dev,
-			"FW restarted successfully from %s!\n",
-			__func__);
+		if (instance->adapter_type >= INVADER_SERIES) {
+			status_reg = instance->instancet->read_fw_status_reg(
+					instance->reg_set);
+			do_adp_reset = status_reg & MFI_RESET_ADAPTER;
+		}
 
-		/*waitting for about 30 second before retry*/
-		ssleep(30);
+		if (do_adp_reset) {
+			atomic_set(&instance->fw_reset_no_pci_access, 1);
+			instance->instancet->adp_reset
+				(instance, instance->reg_set);
+			atomic_set(&instance->fw_reset_no_pci_access, 0);
+			dev_info(&instance->pdev->dev,
+				 "FW restarted successfully from %s!\n",
+				 __func__);
 
-		if (megasas_transition_to_ready(instance, 0))
+			/*waiting for about 30 second before retry*/
+			ssleep(30);
+
+			if (megasas_transition_to_ready(instance, 0))
+				goto fail_ready_state;
+		} else {
 			goto fail_ready_state;
+		}
 	}
 
 	megasas_init_ctrl_params(instance);
@@ -5282,12 +5293,29 @@ static int megasas_init_fw(struct megasas_instance *instance)
 				instance->msix_vectors = (scratch_pad_2
 					& MR_MAX_REPLY_QUEUES_OFFSET) + 1;
 				fw_msix_count = instance->msix_vectors;
-			} else { /* Invader series supports more than 8 MSI-x vectors*/
+			} else {
 				instance->msix_vectors = ((scratch_pad_2
 					& MR_MAX_REPLY_QUEUES_EXT_OFFSET)
 					>> MR_MAX_REPLY_QUEUES_EXT_OFFSET_SHIFT) + 1;
-				if (instance->msix_vectors > 16)
-					instance->msix_combined = true;
+
+				/*
+				 * For Invader series, > 8 MSI-x vectors
+				 * supported by FW/HW implies combined
+				 * reply queue mode is enabled.
+				 * For Ventura series, > 16 MSI-x vectors
+				 * supported by FW/HW implies combined
+				 * reply queue mode is enabled.
+				 */
+				switch (instance->adapter_type) {
+				case INVADER_SERIES:
+					if (instance->msix_vectors > 8)
+						instance->msix_combined = true;
+					break;
+				case VENTURA_SERIES:
+					if (instance->msix_vectors > 16)
+						instance->msix_combined = true;
+					break;
+				}
 
 				if (rdpq_enable)
 					instance->is_rdpq = (scratch_pad_2 & MR_RDPQ_MODE_OFFSET) ?
