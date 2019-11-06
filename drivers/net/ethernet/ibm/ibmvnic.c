@@ -1777,8 +1777,11 @@ static void __ibmvnic_reset(struct work_struct *work)
 	rwi = get_next_rwi(adapter);
 	while (rwi) {
 		if (adapter->state == VNIC_REMOVING ||
-		    adapter->state == VNIC_REMOVED)
-			goto out;
+		    adapter->state == VNIC_REMOVED) {
+			kfree(rwi);
+			rc = EBUSY;
+			break;
+		}
 
 		rc = do_reset(adapter, rwi, reset_state);
 		kfree(rwi);
@@ -1800,7 +1803,7 @@ static void __ibmvnic_reset(struct work_struct *work)
 		mutex_unlock(&adapter->reset_lock);
 		return;
 	}
-out:
+
 	adapter->resetting = false;
 	mutex_unlock(&adapter->reset_lock);
 }

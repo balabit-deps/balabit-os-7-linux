@@ -37,6 +37,7 @@
 #include <linux/bpf_trace.h>
 #include <net/busy_poll.h>
 #include <net/ip6_checksum.h>
+#include <net/inet_ecn.h>
 #include "en.h"
 #include "en_tc.h"
 #include "eswitch.h"
@@ -628,12 +629,36 @@ static inline void mlx5e_skb_set_hash(struct mlx5_cqe64 *cqe,
 	skb_set_hash(skb, be32_to_cpu(cqe->rss_hash_result), ht);
 }
 
-static inline bool is_last_ethertype_ip(struct sk_buff *skb, int *network_depth)
+static inline bool is_last_ethertype_ip(struct sk_buff *skb, int *network_depth,
+					__be16 *proto)
 {
-	__be16 ethertype = ((struct ethhdr *)skb->data)->h_proto;
+	*proto = ((struct ethhdr *)skb->data)->h_proto;
+	*proto = __vlan_get_protocol(skb, *proto, network_depth);
 
-	ethertype = __vlan_get_protocol(skb, ethertype, network_depth);
-	return (ethertype == htons(ETH_P_IP) || ethertype == htons(ETH_P_IPV6));
+	if (*proto == htons(ETH_P_IP))
+		return pskb_may_pull(skb, *network_depth + sizeof(struct iphdr));
+
+	if (*proto == htons(ETH_P_IPV6))
+		return pskb_may_pull(skb, *network_depth + sizeof(struct ipv6hdr));
+
+	return false;
+}
+
+static inline void mlx5e_enable_ecn(struct mlx5e_rq *rq, struct sk_buff *skb)
+{
+	int network_depth = 0;
+	__be16 proto;
+	void *ip;
+	int rc;
+
+	if (unlikely(!is_last_ethertype_ip(skb, &network_depth, &proto)))
+		return;
+
+	ip = skb->data + network_depth;
+	rc = ((proto == htons(ETH_P_IP)) ? IP_ECN_set_ce((struct iphdr *)ip) :
+					 IP6_ECN_set_ce(skb, (struct ipv6hdr *)ip));
+
+	rq->stats.ecn_mark += !!rc;
 }
 
 static u32 mlx5e_get_fcs(const struct sk_buff *skb)
@@ -647,6 +672,14 @@ static u32 mlx5e_get_fcs(const struct sk_buff *skb)
 	return __get_unaligned_cpu32(fcs_bytes);
 }
 
+static u8 get_ip_proto(struct sk_buff *skb, int network_depth, __be16 proto)
+{
+	void *ip_p = skb->data + network_depth;
+
+	return (proto == htons(ETH_P_IP)) ? ((struct iphdr *)ip_p)->protocol :
+					    ((struct ipv6hdr *)ip_p)->nexthdr;
+}
+
 #define short_frame(size) ((size) <= ETH_ZLEN + ETH_FCS_LEN)
 
 static inline void mlx5e_handle_csum(struct net_device *netdev,
@@ -656,6 +689,7 @@ static inline void mlx5e_handle_csum(struct net_device *netdev,
 				     bool   lro)
 {
 	int network_depth = 0;
+	__be16 proto;
 
 	if (unlikely(!(netdev->features & NETIF_F_RXCSUM)))
 		goto csum_none;
@@ -665,6 +699,10 @@ static inline void mlx5e_handle_csum(struct net_device *netdev,
 		rq->stats.csum_unnecessary++;
 		return;
 	}
+
+	/* True when explicitly set via priv flag, or XDP prog is loaded */
+	if (test_bit(MLX5E_RQ_STATE_NO_CSUM_COMPLETE, &rq->state))
+		goto csum_unnecessary;
 
 	/* CQE csum doesn't cover padding octets in short ethernet
 	 * frames. And the pad field is appended prior to calculating
@@ -677,7 +715,10 @@ static inline void mlx5e_handle_csum(struct net_device *netdev,
 	if (short_frame(skb->len))
 		goto csum_unnecessary;
 
-	if (is_last_ethertype_ip(skb, &network_depth)) {
+	if (likely(is_last_ethertype_ip(skb, &network_depth, &proto))) {
+		if (unlikely(get_ip_proto(skb, network_depth, proto) == IPPROTO_SCTP))
+			goto csum_unnecessary;
+
 		skb->ip_summed = CHECKSUM_COMPLETE;
 		skb->csum = csum_unfold((__force __sum16)cqe->check_sum);
 		if (network_depth > ETH_HLEN)
@@ -713,6 +754,8 @@ csum_none:
 	skb->ip_summed = CHECKSUM_NONE;
 	rq->stats.csum_none++;
 }
+
+#define MLX5E_CE_BIT_MASK 0x80
 
 static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
 				      u32 cqe_bcnt,
@@ -753,6 +796,10 @@ static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
 	skb->mark = be32_to_cpu(cqe->sop_drop_qpn) & MLX5E_TC_FLOW_ID_MASK;
 
 	mlx5e_handle_csum(netdev, cqe, rq, skb, !!lro_num_seg);
+	/* checking CE bit in cqe - MSB in ml_path field */
+	if (unlikely(cqe->ml_path & MLX5E_CE_BIT_MASK))
+		mlx5e_enable_ecn(rq, skb);
+
 	skb->protocol = eth_type_trans(skb, netdev);
 }
 
