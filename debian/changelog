@@ -1,3 +1,14 @@
+linux (4.15.0-70.79) bionic; urgency=medium
+
+  * Ubuntu-5.0.0-33.35 introduces KVM regression with old Intel CPUs and Linux
+    guests (LP: #1851709)
+    - Revert "KVM: x86: Manually calculate reserved bits when loading PDPTRS"
+
+  * Incomplete i915 fix for 64-bit x86 kernels (LP: #1852141) // CVE-2019-0155
+    - SAUCE: drm/i915/cmdparser: Fix jump whitelist clearing
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Tue, 12 Nov 2019 10:54:50 +0100
+
 linux (4.15.0-69.78) bionic; urgency=medium
 
   * KVM NULL pointer deref (LP: #1851205)
