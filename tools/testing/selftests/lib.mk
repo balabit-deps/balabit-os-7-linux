@@ -32,9 +32,11 @@ endif
 
 .ONESHELL:
 define RUN_TESTS
-	@test_num=`echo 0`;
-	@echo "TAP version 13";
-	@for TEST in $(1); do				\
+	@export KSFT_TAP_LEVEL=`echo 1`;		\
+	test_num=`echo 0`;				\
+	skip=`echo 4`;					\
+	echo "TAP version 13";				\
+	for TEST in $(1); do				\
 		BASENAME_TEST=`basename $$TEST`;	\
 		test_num=`echo $$test_num+1 | bc`;	\
 		echo "selftests: $$BASENAME_TEST";	\
@@ -43,11 +45,23 @@ define RUN_TESTS
 			echo "selftests: Warning: file $$BASENAME_TEST is not executable, correct this.";\
 			echo "not ok 1..$$test_num selftests: $$BASENAME_TEST [FAIL]"; \
 		else					\
-		if [ "X$(summary)" != "X" ]; then		\
-				cd `dirname $$TEST` > /dev/null; (./$$BASENAME_TEST > /tmp/$$BASENAME_TEST 2>&1 && echo "ok 1..$$test_num selftests: $$BASENAME_TEST [PASS]") || echo "not ok 1..$$test_num selftests:  $$BASENAME_TEST [FAIL]"; cd - > /dev/null;\
+			cd `dirname $$TEST` > /dev/null; \
+			if [ "X$(summary)" != "X" ]; then	\
+				(./$$BASENAME_TEST > /tmp/$$BASENAME_TEST 2>&1 && \
+				echo "ok 1..$$test_num selftests: $$BASENAME_TEST [PASS]") || \
+				(if [ $$? -eq $$skip ]; then	\
+					echo "not ok 1..$$test_num selftests:  $$BASENAME_TEST [SKIP]";				\
+				else echo "not ok 1..$$test_num selftests:  $$BASENAME_TEST [FAIL]";					\
+				fi;)			\
 			else				\
-				cd `dirname $$TEST` > /dev/null; (./$$BASENAME_TEST && echo "ok 1..$$test_num selftests: $$BASENAME_TEST [PASS]") || echo "not ok 1..$$test_num selftests:  $$BASENAME_TEST [FAIL]"; cd - > /dev/null;\
+				(./$$BASENAME_TEST &&	\
+				echo "ok 1..$$test_num selftests: $$BASENAME_TEST [PASS]") ||						\
+				(if [ $$? -eq $$skip ]; then \
+					echo "not ok 1..$$test_num selftests:  $$BASENAME_TEST [SKIP]"; \
+				else echo "not ok 1..$$test_num selftests:  $$BASENAME_TEST [FAIL]";				\
+				fi;)		\
 			fi;				\
+			cd - > /dev/null;		\
 		fi;					\
 	done;
 endef
