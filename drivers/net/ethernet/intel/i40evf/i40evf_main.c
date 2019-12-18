@@ -2605,6 +2605,8 @@ int i40evf_process_config(struct i40evf_adapter *adapter)
 	if (vfres->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_VLAN)
 		netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER;
 
+	netdev->priv_flags |= IFF_UNICAST_FLT;
+
 	adapter->vsi.id = adapter->vsi_res->vsi_id;
 
 	adapter->vsi.back = adapter;
@@ -3123,6 +3125,8 @@ static void i40evf_remove(struct pci_dev *pdev)
 		del_timer_sync(&adapter->watchdog_timer);
 
 	flush_scheduled_work();
+
+	cancel_work_sync(&adapter->adminq_task);
 
 	i40evf_free_rss(adapter);
 
