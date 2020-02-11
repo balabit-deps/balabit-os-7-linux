@@ -124,21 +124,6 @@ void hisi_sas_sata_done(struct sas_task *task,
 }
 EXPORT_SYMBOL_GPL(hisi_sas_sata_done);
 
-int hisi_sas_get_ncq_tag(struct sas_task *task, u32 *tag)
-{
-	struct ata_queued_cmd *qc = task->uldd_task;
-
-	if (qc) {
-		if (qc->tf.command == ATA_CMD_FPDMA_WRITE ||
-			qc->tf.command == ATA_CMD_FPDMA_READ) {
-			*tag = qc->tag;
-			return 1;
-		}
-	}
-	return 0;
-}
-EXPORT_SYMBOL_GPL(hisi_sas_get_ncq_tag);
-
 /*
  * This function assumes linkrate mask fits in 8 bits, which it
  * does for all HW versions supported.
@@ -548,7 +533,13 @@ static int hisi_sas_task_exec(struct sas_task *task, gfp_t gfp_flags,
 	dev = hisi_hba->dev;
 
 	if (unlikely(test_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags))) {
-		if (in_softirq())
+		/*
+		 * For IOs from upper layer, it may already disable preempt
+		 * in the IO path, if disable preempt again in down(),
+		 * function schedule() will report schedule_bug(), so check
+		 * preemptible() before goto down().
+		 */
+		if (!preemptible())
 			return -EINVAL;
 
 		down(&hisi_hba->sem);
@@ -779,7 +770,8 @@ static void hisi_sas_phyup_work(struct work_struct *work)
 	struct asd_sas_phy *sas_phy = &phy->sas_phy;
 	int phy_no = sas_phy->id;
 
-	hisi_hba->hw->sl_notify(hisi_hba, phy_no); /* This requires a sleep */
+	if (phy->identify.target_port_protocols == SAS_PROTOCOL_SSP)
+		hisi_hba->hw->sl_notify_ssp(hisi_hba, phy_no);
 	hisi_sas_bytes_dmaed(hisi_hba, phy_no);
 }
 
@@ -845,12 +837,13 @@ static void hisi_sas_port_notify_formed(struct asd_sas_phy *sas_phy)
 	struct hisi_hba *hisi_hba = sas_ha->lldd_ha;
 	struct hisi_sas_phy *phy = sas_phy->lldd_phy;
 	struct asd_sas_port *sas_port = sas_phy->port;
-	struct hisi_sas_port *port = to_hisi_sas_port(sas_port);
+	struct hisi_sas_port *port;
 	unsigned long flags;
 
 	if (!sas_port)
 		return;
 
+	port = to_hisi_sas_port(sas_port);
 	spin_lock_irqsave(&hisi_hba->lock, flags);
 	port->port_attached = 1;
 	port->id = phy->port_id;
@@ -926,21 +919,22 @@ static void hisi_sas_dev_gone(struct domain_device *device)
 	dev_info(dev, "dev[%d:%x] is gone\n",
 		 sas_dev->device_id, sas_dev->dev_type);
 
+	down(&hisi_hba->sem);
 	if (!test_bit(HISI_SAS_RESET_BIT, &hisi_hba->flags)) {
 		hisi_sas_internal_task_abort(hisi_hba, device,
 				     HISI_SAS_INT_ABT_DEV, 0);
 
 		hisi_sas_dereg_device(hisi_hba, device);
 
-		down(&hisi_hba->sem);
 		hisi_hba->hw->clear_itct(hisi_hba, sas_dev);
-		up(&hisi_hba->sem);
 		device->lldd_dev = NULL;
 	}
 
 	if (hisi_hba->hw->free_device)
 		hisi_hba->hw->free_device(sas_dev);
 	sas_dev->dev_type = SAS_PHY_UNUSED;
+	sas_dev->sas_device = NULL;
+	up(&hisi_hba->sem);
 }
 
 static int hisi_sas_queue_command(struct sas_task *task, gfp_t gfp_flags)
@@ -948,7 +942,7 @@ static int hisi_sas_queue_command(struct sas_task *task, gfp_t gfp_flags)
 	return hisi_sas_task_exec(task, gfp_flags, 0, NULL);
 }
 
-static void hisi_sas_phy_set_linkrate(struct hisi_hba *hisi_hba, int phy_no,
+static int hisi_sas_phy_set_linkrate(struct hisi_hba *hisi_hba, int phy_no,
 			struct sas_phy_linkrates *r)
 {
 	struct sas_phy_linkrates _r;
@@ -957,6 +951,9 @@ static void hisi_sas_phy_set_linkrate(struct hisi_hba *hisi_hba, int phy_no,
 	struct asd_sas_phy *sas_phy = &phy->sas_phy;
 	enum sas_linkrate min, max;
 
+	if (r->minimum_linkrate > SAS_LINK_RATE_1_5_GBPS)
+		return -EINVAL;
+
 	if (r->maximum_linkrate == SAS_LINK_RATE_UNKNOWN) {
 		max = sas_phy->phy->maximum_linkrate;
 		min = r->minimum_linkrate;
@@ -964,7 +961,7 @@ static void hisi_sas_phy_set_linkrate(struct hisi_hba *hisi_hba, int phy_no,
 		max = r->maximum_linkrate;
 		min = sas_phy->phy->minimum_linkrate;
 	} else
-		return;
+		return -EINVAL;
 
 	_r.maximum_linkrate = max;
 	_r.minimum_linkrate = min;
@@ -976,6 +973,8 @@ static void hisi_sas_phy_set_linkrate(struct hisi_hba *hisi_hba, int phy_no,
 	msleep(100);
 	hisi_hba->hw->phy_set_linkrate(hisi_hba, phy_no, &_r);
 	hisi_hba->hw->phy_start(hisi_hba, phy_no);
+
+	return 0;
 }
 
 static int hisi_sas_control_phy(struct asd_sas_phy *sas_phy, enum phy_func func,
@@ -1001,8 +1000,7 @@ static int hisi_sas_control_phy(struct asd_sas_phy *sas_phy, enum phy_func func,
 		break;
 
 	case PHY_FUNC_SET_LINK_RATE:
-		hisi_sas_phy_set_linkrate(hisi_hba, phy_no, funcdata);
-		break;
+		return hisi_sas_phy_set_linkrate(hisi_hba, phy_no, funcdata);
 	case PHY_FUNC_GET_EVENTS:
 		if (hisi_hba->hw->get_events) {
 			hisi_hba->hw->get_events(hisi_hba, phy_no);
@@ -1412,11 +1410,11 @@ void hisi_sas_controller_reset_done(struct hisi_hba *hisi_hba)
 	msleep(1000);
 	hisi_sas_refresh_port_id(hisi_hba);
 	clear_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
-	up(&hisi_hba->sem);
 
 	if (hisi_hba->reject_stp_links_msk)
 		hisi_sas_terminate_stp_reject(hisi_hba);
 	hisi_sas_reset_init_all_devices(hisi_hba);
+	up(&hisi_hba->sem);
 	scsi_unblock_requests(shost);
 	clear_bit(HISI_SAS_RESET_BIT, &hisi_hba->flags);
 
@@ -1604,12 +1602,13 @@ static int hisi_sas_debug_I_T_nexus_reset(struct domain_device *device)
 			(device->tproto & SAS_PROTOCOL_STP)) ? 0 : 1;
 	struct hisi_hba *hisi_hba = dev_to_hisi_hba(device);
 	struct sas_ha_struct *sas_ha = &hisi_hba->sha;
-	struct asd_sas_phy *sas_phy = sas_ha->sas_phy[local_phy->number];
-	struct hisi_sas_phy *phy = container_of(sas_phy,
-			struct hisi_sas_phy, sas_phy);
 	DECLARE_COMPLETION_ONSTACK(phyreset);
 
 	if (scsi_is_sas_phy_local(local_phy)) {
+		struct asd_sas_phy *sas_phy =
+			sas_ha->sas_phy[local_phy->number];
+		struct hisi_sas_phy *phy =
+			container_of(sas_phy, struct hisi_sas_phy, sas_phy);
 		phy->in_reset = 1;
 		phy->reset_completion = &phyreset;
 	}
@@ -1618,6 +1617,10 @@ static int hisi_sas_debug_I_T_nexus_reset(struct domain_device *device)
 	sas_put_local_phy(local_phy);
 
 	if (scsi_is_sas_phy_local(local_phy)) {
+		struct asd_sas_phy *sas_phy =
+			sas_ha->sas_phy[local_phy->number];
+		struct hisi_sas_phy *phy =
+			container_of(sas_phy, struct hisi_sas_phy, sas_phy);
 		int ret = wait_for_completion_timeout(&phyreset, 2 * HZ);
 		unsigned long flags;
 

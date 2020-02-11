@@ -1605,6 +1605,9 @@ static bool hns3_get_tx_timeo_queue_info(struct net_device *ndev)
 		    time_after(jiffies,
 			       (trans_start + ndev->watchdog_timeo))) {
 			timeout_queue = i;
+			netdev_info(ndev, "queue state: 0x%lx, delta msecs: %u\n",
+				    q->state,
+				    jiffies_to_msecs(jiffies - trans_start));
 			break;
 		}
 	}
@@ -1746,9 +1749,13 @@ static int hns3_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	hns3_get_dev_capability(pdev, ae_dev);
 	pci_set_drvdata(pdev, ae_dev);
 
-	hnae3_register_ae_dev(ae_dev);
+	ret = hnae3_register_ae_dev(ae_dev);
+	if (ret) {
+		devm_kfree(&pdev->dev, ae_dev);
+		pci_set_drvdata(pdev, NULL);
+	}
 
-	return 0;
+	return ret;
 }
 
 /* hns3_remove - Device removal routine
@@ -1762,6 +1769,7 @@ static void hns3_remove(struct pci_dev *pdev)
 		hns3_disable_sriov(pdev);
 
 	hnae3_unregister_ae_dev(ae_dev);
+	pci_set_drvdata(pdev, NULL);
 }
 
 /**
@@ -2770,7 +2778,7 @@ static bool hns3_get_new_int_gl(struct hns3_enet_ring_group *ring_group)
 	u32 time_passed_ms;
 	u16 new_int_gl;
 
-	if (!ring_group->coal.int_gl || !tqp_vector->last_jiffies)
+	if (!tqp_vector->last_jiffies)
 		return false;
 
 	if (ring_group->total_packets == 0) {

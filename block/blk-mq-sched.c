@@ -220,15 +220,8 @@ void blk_mq_sched_dispatch_requests(struct blk_mq_hw_ctx *hctx)
 		}
 	} else if (has_sched_dispatch) {
 		blk_mq_do_dispatch_sched(hctx);
-	} else if (q->mq_ops->get_budget) {
-		/*
-		 * If we need to get budget before queuing request, we
-		 * dequeue request one by one from sw queue for avoiding
-		 * to mess up I/O merge when dispatch runs out of resource.
-		 *
-		 * TODO: get more budgets, and dequeue more requests in
-		 * one time.
-		 */
+	} else if (hctx->dispatch_busy) {
+		/* dequeue request one by one from sw queue if queue is busy */
 		blk_mq_do_dispatch_ctx(hctx);
 	} else {
 		blk_mq_flush_busy_ctxs(hctx, &rq_list);
@@ -429,7 +422,7 @@ done:
 }
 
 void blk_mq_sched_insert_request(struct request *rq, bool at_head,
-				 bool run_queue, bool async, bool can_block)
+				 bool run_queue, bool async)
 {
 	struct request_queue *q = rq->q;
 	struct elevator_queue *e = q->elevator;
@@ -472,8 +465,19 @@ void blk_mq_sched_insert_requests(struct request_queue *q,
 
 	if (e && e->type->ops.mq.insert_requests)
 		e->type->ops.mq.insert_requests(hctx, list, false);
-	else
+	else {
+		/*
+		 * try to issue requests directly if the hw queue isn't
+		 * busy in case of 'none' scheduler, and this way may save
+		 * us one extra enqueue & dequeue to sw queue.
+		 */
+		if (!hctx->dispatch_busy && !e && !run_queue_async) {
+			blk_mq_try_issue_list_directly(hctx, list);
+			if (list_empty(list))
+				return;
+		}
 		blk_mq_insert_requests(hctx, ctx, list);
+	}
 
 	blk_mq_run_hw_queue(hctx, run_queue_async);
 }
