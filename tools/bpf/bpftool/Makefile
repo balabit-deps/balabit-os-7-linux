@@ -53,13 +53,46 @@ CC = gcc
 CFLAGS += -O2
 CFLAGS += -W -Wall -Wextra -Wno-unused-parameter -Wshadow
 CFLAGS += -D__EXPORTED_HEADERS__ -I$(srctree)/tools/include/uapi -I$(srctree)/tools/include -I$(srctree)/tools/lib/bpf -I$(srctree)/kernel/bpf/
-LIBS = -lelf -lbfd -lopcodes $(LIBBPF)
+LIBS = -lelf $(LIBBPF)
+
+FEATURE_USER = .bpftool
+FEATURE_TESTS = libbfd disassembler-four-args
+FEATURE_DISPLAY = libbfd disassembler-four-args
+
+check_feat := 1
+NON_CHECK_FEAT_TARGETS := clean uninstall doc doc-clean doc-install doc-uninstall
+ifdef MAKECMDGOALS
+ifeq ($(filter-out $(NON_CHECK_FEAT_TARGETS),$(MAKECMDGOALS)),)
+  check_feat := 0
+endif
+endif
+
+ifeq ($(check_feat),1)
+ifeq ($(FEATURES_DUMP),)
+include $(srctree)/tools/build/Makefile.feature
+else
+include $(FEATURES_DUMP)
+endif
+endif
+
+ifeq ($(feature-disassembler-four-args), 1)
+CFLAGS += -DDISASM_FOUR_ARGS_SIGNATURE
+endif
 
 include $(wildcard *.d)
 
 all: $(OUTPUT)bpftool
 
-SRCS=$(wildcard *.c)
+BFD_SRCS = jit_disasm.c
+
+SRCS = $(filter-out $(BFD_SRCS),$(wildcard *.c))
+
+ifeq ($(feature-libbfd),1)
+CFLAGS += -DHAVE_LIBBFD_SUPPORT
+SRCS += $(BFD_SRCS)
+LIBS += -lbfd -lopcodes
+endif
+
 OBJS=$(patsubst %.c,$(OUTPUT)%.o,$(SRCS)) $(OUTPUT)disasm.o
 
 $(OUTPUT)disasm.o: $(srctree)/kernel/bpf/disasm.c

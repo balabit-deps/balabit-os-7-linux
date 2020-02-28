@@ -290,10 +290,13 @@ struct intel_engine_execlists {
 struct intel_engine_cs {
 	struct drm_i915_private *i915;
 	char name[INTEL_ENGINE_CS_MAX_NAME];
+
 	enum intel_engine_id id;
-	unsigned int uabi_id;
 	unsigned int hw_id;
 	unsigned int guc_id;
+
+	u8 uabi_id;
+	u8 uabi_class;
 
 	u8 class;
 	u8 instance;
@@ -304,6 +307,7 @@ struct intel_engine_cs {
 	struct intel_ring *buffer;
 	struct intel_timeline *timeline;
 
+	struct drm_i915_gem_object *default_state;
 	struct intel_render_state *render_state;
 
 	atomic_t irq_count;
@@ -881,8 +885,11 @@ static inline u32 *gen8_emit_pipe_control(u32 *batch, u32 flags, u32 offset)
 bool intel_engine_is_idle(struct intel_engine_cs *engine);
 bool intel_engines_are_idle(struct drm_i915_private *dev_priv);
 
+bool intel_engine_has_kernel_context(const struct intel_engine_cs *engine);
+
 void intel_engines_mark_idle(struct drm_i915_private *i915);
 void intel_engines_reset_default_submission(struct drm_i915_private *i915);
+unsigned int intel_engines_has_context_isolation(struct drm_i915_private *i915);
 
 bool intel_engine_can_store_dword(struct intel_engine_cs *engine);
 

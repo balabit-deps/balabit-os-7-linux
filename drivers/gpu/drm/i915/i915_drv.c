@@ -407,6 +407,9 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		 */
 		value = 1;
 		break;
+	case I915_PARAM_HAS_CONTEXT_ISOLATION:
+		value = intel_engines_has_context_isolation(dev_priv);
+		break;
 	case I915_PARAM_SLICE_MASK:
 		value = INTEL_INFO(dev_priv)->sseu.slice_mask;
 		if (!value)
@@ -677,7 +680,7 @@ static int i915_load_modeset_init(struct drm_device *dev)
 	if (ret)
 		goto cleanup_uc;
 
-	intel_modeset_gem_init(dev);
+	intel_setup_overlay(dev_priv);
 
 	if (INTEL_INFO(dev_priv)->num_pipes == 0)
 		return 0;

@@ -1077,12 +1077,34 @@ static void execlists_schedule(struct drm_i915_gem_request *request, int prio)
 	spin_unlock_irq(&engine->timeline->lock);
 }
 
+static int __context_pin(struct i915_gem_context *ctx, struct i915_vma *vma)
+{
+	unsigned int flags;
+	int err;
+
+	/*
+	 * Clear this page out of any CPU caches for coherent swap-in/out.
+	 * We only want to do this on the first bind so that we do not stall
+	 * on an active context (which by nature is already on the GPU).
+	 */
+	if (!(vma->flags & I915_VMA_GLOBAL_BIND)) {
+		err = i915_gem_object_set_to_gtt_domain(vma->obj, true);
+		if (err)
+			return err;
+	}
+
+	flags = PIN_GLOBAL | PIN_HIGH;
+	if (ctx->ggtt_offset_bias)
+		flags |= PIN_OFFSET_BIAS | ctx->ggtt_offset_bias;
+
+	return i915_vma_pin(vma, 0, GEN8_LR_CONTEXT_ALIGN, flags);
+}
+
 static struct intel_ring *
 execlists_context_pin(struct intel_engine_cs *engine,
 		      struct i915_gem_context *ctx)
 {
 	struct intel_context *ce = &ctx->engine[engine->id];
-	unsigned int flags;
 	void *vaddr;
 	int ret;
 
@@ -1099,11 +1121,7 @@ execlists_context_pin(struct intel_engine_cs *engine,
 	}
 	GEM_BUG_ON(!ce->state);
 
-	flags = PIN_GLOBAL | PIN_HIGH;
-	if (ctx->ggtt_offset_bias)
-		flags |= PIN_OFFSET_BIAS | ctx->ggtt_offset_bias;
-
-	ret = i915_vma_pin(ce->state, 0, GEN8_LR_CONTEXT_ALIGN, flags);
+	ret = __context_pin(ctx, ce->state);
 	if (ret)
 		goto err;
 
@@ -1123,9 +1141,7 @@ execlists_context_pin(struct intel_engine_cs *engine,
 	ce->lrc_reg_state[CTX_RING_BUFFER_START+1] =
 		i915_ggtt_offset(ce->ring->vma);
 
-	ce->state->obj->mm.dirty = true;
 	ce->state->obj->pin_global++;
-
 	i915_gem_context_get(ctx);
 out:
 	return ce->ring;
@@ -1164,7 +1180,6 @@ static int execlists_request_alloc(struct drm_i915_gem_request *request)
 	struct intel_engine_cs *engine = request->engine;
 	struct intel_context *ce = &request->ctx->engine[engine->id];
 	u32 *cs;
-	int ret;
 
 	GEM_BUG_ON(!ce->pin_count);
 
@@ -1177,14 +1192,6 @@ static int execlists_request_alloc(struct drm_i915_gem_request *request)
 	cs = intel_ring_begin(request, 0);
 	if (IS_ERR(cs))
 		return PTR_ERR(cs);
-
-	if (!ce->initialised) {
-		ret = engine->init_context(request);
-		if (ret)
-			return ret;
-
-		ce->initialised = true;
-	}
 
 	/* Note that after this point, we have committed to using
 	 * this request as it is being used to both track the
@@ -2133,7 +2140,6 @@ static void execlists_init_reg_state(u32 *regs,
 
 	CTX_REG(regs, CTX_CONTEXT_CONTROL, RING_CONTEXT_CONTROL(engine),
 		_MASKED_BIT_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH |
-				   CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT |
 				   (HAS_RESOURCE_STREAMER(dev_priv) ?
 				   CTX_CTRL_RS_CTX_ENABLE : 0)));
 	CTX_REG(regs, CTX_RING_HEAD, RING_HEAD(base), 0);
@@ -2210,6 +2216,7 @@ populate_lr_context(struct i915_gem_context *ctx,
 		    struct intel_ring *ring)
 {
 	void *vaddr;
+	u32 *regs;
 	int ret;
 
 	ret = i915_gem_object_set_to_cpu_domain(ctx_obj, true);
@@ -2226,11 +2233,31 @@ populate_lr_context(struct i915_gem_context *ctx,
 	}
 	ctx_obj->mm.dirty = true;
 
+	if (engine->default_state) {
+		/*
+		 * We only want to copy over the template context state;
+		 * skipping over the headers reserved for GuC communication,
+		 * leaving those as zero.
+		 */
+		const unsigned long start = LRC_HEADER_PAGES * PAGE_SIZE;
+		void *defaults;
+
+		defaults = i915_gem_object_pin_map(engine->default_state,
+						   I915_MAP_WB);
+		if (IS_ERR(defaults))
+			return PTR_ERR(defaults);
+
+		memcpy(vaddr + start, defaults + start, engine->context_size);
+		i915_gem_object_unpin_map(engine->default_state);
+	}
+
 	/* The second page of the context object contains some fields which must
 	 * be set up prior to the first execution. */
-
-	execlists_init_reg_state(vaddr + LRC_STATE_PN * PAGE_SIZE,
-				 ctx, engine, ring);
+	regs = vaddr + LRC_STATE_PN * PAGE_SIZE;
+	execlists_init_reg_state(regs, ctx, engine, ring);
+	if (!engine->default_state)
+		regs[CTX_CONTEXT_CONTROL + 1] |=
+			_MASKED_BIT_ENABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT);
 
 	i915_gem_object_unpin_map(ctx_obj);
 
@@ -2283,7 +2310,6 @@ static int execlists_context_deferred_alloc(struct i915_gem_context *ctx,
 
 	ce->ring = ring;
 	ce->state = vma;
-	ce->initialised |= engine->init_context == NULL;
 
 	return 0;
 

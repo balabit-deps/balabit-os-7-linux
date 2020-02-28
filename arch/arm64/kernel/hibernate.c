@@ -202,6 +202,7 @@ static int create_safe_exec_page(void *src_start, size_t length,
 				 gfp_t mask)
 {
 	int rc = 0;
+	pgd_t *trans_pgd;
 	pgd_t *pgd;
 	pud_t *pud;
 	pmd_t *pmd;
@@ -216,7 +217,13 @@ static int create_safe_exec_page(void *src_start, size_t length,
 	memcpy((void *)dst, src_start, length);
 	flush_icache_range(dst, dst + length);
 
-	pgd = pgd_offset_raw(allocator(mask), dst_addr);
+	trans_pgd = allocator(mask);
+	if (!trans_pgd) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	pgd = pgd_offset_raw(trans_pgd, dst_addr);
 	if (pgd_none(*pgd)) {
 		pud = allocator(mask);
 		if (!pud) {
@@ -247,8 +254,7 @@ static int create_safe_exec_page(void *src_start, size_t length,
 	}
 
 	pte = pte_offset_kernel(pmd, dst_addr);
-	set_pte(pte, __pte(virt_to_phys((void *)dst) |
-			 pgprot_val(PAGE_KERNEL_EXEC)));
+	set_pte(pte, pfn_pte(virt_to_pfn(dst), PAGE_KERNEL_EXEC));
 
 	/*
 	 * Load our new page tables. A strict BBM approach requires that we

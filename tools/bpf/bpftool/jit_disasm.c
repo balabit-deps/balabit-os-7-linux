@@ -110,7 +110,14 @@ void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes)
 
 	disassemble_init_for_target(&info);
 
+#ifdef DISASM_FOUR_ARGS_SIGNATURE
+	disassemble = disassembler(info.arch,
+				   bfd_big_endian(bfdf),
+				   info.mach,
+				   bfdf);
+#else
 	disassemble = disassembler(bfdf);
+#endif
 	assert(disassemble);
 
 	if (json_output)
@@ -162,4 +169,10 @@ void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes)
 		jsonw_end_array(json_wtr);
 
 	bfd_close(bfdf);
+}
+
+int disasm_init(void)
+{
+	bfd_init();
+	return 0;
 }
