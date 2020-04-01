@@ -43,6 +43,11 @@ static inline unsigned long *vcpu_reg32(struct kvm_vcpu *vcpu, u8 reg_num)
 
 unsigned long *vcpu_spsr(struct kvm_vcpu *vcpu);
 
+static inline unsigned long host_spsr_to_spsr32(unsigned long spsr)
+{
+	return spsr;
+}
+
 static inline unsigned long vcpu_get_reg(struct kvm_vcpu *vcpu,
 					 u8 reg_num)
 {
@@ -172,6 +177,11 @@ static inline bool kvm_vcpu_dabt_iswrite(struct kvm_vcpu *vcpu)
 static inline bool kvm_vcpu_dabt_issext(struct kvm_vcpu *vcpu)
 {
 	return kvm_vcpu_get_hsr(vcpu) & HSR_SSE;
+}
+
+static inline bool kvm_vcpu_dabt_issf(const struct kvm_vcpu *vcpu)
+{
+	return false;
 }
 
 static inline int kvm_vcpu_dabt_get_rd(struct kvm_vcpu *vcpu)
