@@ -16,6 +16,7 @@
 #include <linux/exportfs.h>
 #include <linux/writeback.h>
 #include <linux/buffer_head.h> /* sync_mapping_buffers */
+#include <linux/io.h>
 
 #include <linux/uaccess.h>
 
@@ -711,6 +712,39 @@ ssize_t memory_read_from_buffer(void *to, size_t count, loff_t *ppos,
 }
 EXPORT_SYMBOL(memory_read_from_buffer);
 
+/**
+ * memory_read_from_io_buffer - copy data from a io memory mapped buffer
+ * @to: the kernel space buffer to read to
+ * @count: the maximum number of bytes to read
+ * @ppos: the current position in the buffer
+ * @from: the buffer to read from
+ * @available: the size of the buffer
+ *
+ * The memory_read_from_buffer() function reads up to @count bytes from the
+ * io memory mappy buffer @from at offset @ppos into the kernel space address
+ * starting at @to.
+ *
+ * On success, the number of bytes read is returned and the offset @ppos is
+ * advanced by this number, or negative value is returned on error.
+ **/
+ssize_t memory_read_from_io_buffer(void *to, size_t count, loff_t *ppos,
+				   const void *from, size_t available)
+{
+	loff_t pos = *ppos;
+
+	if (pos < 0)
+		return -EINVAL;
+	if (pos >= available)
+		return 0;
+	if (count > available - pos)
+		count = available - pos;
+	memcpy_fromio(to, from + pos, count);
+	*ppos = pos + count;
+
+	return count;
+}
+EXPORT_SYMBOL(memory_read_from_io_buffer);
+
 /*
  * Transaction based IO.
  * The file expects a single write which triggers the transaction, and then
@@ -802,7 +836,7 @@ int simple_attr_open(struct inode *inode, struct file *file,
 {
 	struct simple_attr *attr;
 
-	attr = kmalloc(sizeof(*attr), GFP_KERNEL);
+	attr = kzalloc(sizeof(*attr), GFP_KERNEL);
 	if (!attr)
 		return -ENOMEM;
 
@@ -842,9 +876,11 @@ ssize_t simple_attr_read(struct file *file, char __user *buf,
 	if (ret)
 		return ret;
 
-	if (*ppos) {		/* continued read */
+	if (*ppos && attr->get_buf[0]) {
+		/* continued read */
 		size = strlen(attr->get_buf);
-	} else {		/* first read */
+	} else {
+		/* first read */
 		u64 val;
 		ret = attr->get(attr->data, &val);
 		if (ret)

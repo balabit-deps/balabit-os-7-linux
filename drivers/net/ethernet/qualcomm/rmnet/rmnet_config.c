@@ -155,6 +155,11 @@ static int rmnet_newlink(struct net *src_net, struct net_device *dev,
 	int err = 0;
 	u16 mux_id;
 
+	if (!tb[IFLA_LINK]) {
+		NL_SET_ERR_MSG_MOD(extack, "link not specified");
+		return -EINVAL;
+	}
+
 	real_dev = __dev_get_by_index(src_net, nla_get_u32(tb[IFLA_LINK]));
 	if (!real_dev || !dev)
 		return -ENODEV;
@@ -267,11 +272,9 @@ static void rmnet_force_unassociate_device(struct net_device *dev)
 	port = rmnet_get_port_rtnl(dev);
 	d.port = port;
 
-	rcu_read_lock();
 	rmnet_unregister_bridge(dev, port);
 
 	netdev_walk_all_lower_dev_rcu(real_dev, rmnet_dev_walk_unreg, &d);
-	rcu_read_unlock();
 	unregister_netdevice_many(&list);
 
 	rmnet_unregister_real_device(real_dev, port);
@@ -333,11 +336,10 @@ struct rtnl_link_ops rmnet_link_ops __read_mostly = {
 	.get_size	= rmnet_get_size,
 };
 
-/* Needs either rcu_read_lock() or rtnl lock */
-struct rmnet_port *rmnet_get_port(struct net_device *real_dev)
+struct rmnet_port *rmnet_get_port_rcu(struct net_device *real_dev)
 {
 	if (rmnet_is_real_dev_registered(real_dev))
-		return rcu_dereference_rtnl(real_dev->rx_handler_data);
+		return rcu_dereference_bh(real_dev->rx_handler_data);
 	else
 		return NULL;
 }
@@ -363,7 +365,7 @@ int rmnet_add_bridge(struct net_device *rmnet_dev,
 	struct rmnet_port *port, *slave_port;
 	int err;
 
-	port = rmnet_get_port(real_dev);
+	port = rmnet_get_port_rtnl(real_dev);
 
 	/* If there is more than one rmnet dev attached, its probably being
 	 * used for muxing. Skip the briding in that case
@@ -383,7 +385,7 @@ int rmnet_add_bridge(struct net_device *rmnet_dev,
 	if (err)
 		return -EINVAL;
 
-	slave_port = rmnet_get_port(slave_dev);
+	slave_port = rmnet_get_port_rtnl(slave_dev);
 	slave_port->rmnet_mode = RMNET_EPMODE_BRIDGE;
 	slave_port->bridge_ep = real_dev;
 
@@ -401,12 +403,12 @@ int rmnet_del_bridge(struct net_device *rmnet_dev,
 	struct net_device *real_dev = priv->real_dev;
 	struct rmnet_port *port, *slave_port;
 
-	port = rmnet_get_port(real_dev);
+	port = rmnet_get_port_rtnl(real_dev);
 	port->rmnet_mode = RMNET_EPMODE_VND;
 	port->bridge_ep = NULL;
 
 	netdev_upper_dev_unlink(slave_dev, rmnet_dev);
-	slave_port = rmnet_get_port(slave_dev);
+	slave_port = rmnet_get_port_rtnl(slave_dev);
 	rmnet_unregister_real_device(slave_dev, slave_port);
 
 	netdev_dbg(slave_dev, "removed from rmnet as slave\n");
