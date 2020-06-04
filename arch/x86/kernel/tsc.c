@@ -281,15 +281,16 @@ static int __init tsc_setup(char *str)
 
 __setup("tsc=", tsc_setup);
 
-#define MAX_RETRIES     5
-#define SMI_TRESHOLD    50000
+#define MAX_RETRIES		5
+#define TSC_DEFAULT_THRESHOLD	0x20000
 
 /*
- * Read TSC and the reference counters. Take care of SMI disturbance
+ * Read TSC and the reference counters. Take care of any disturbances
  */
 static u64 tsc_read_refs(u64 *p, int hpet)
 {
 	u64 t1, t2;
+	u64 thresh = tsc_khz ? tsc_khz >> 5 : TSC_DEFAULT_THRESHOLD;
 	int i;
 
 	for (i = 0; i < MAX_RETRIES; i++) {
@@ -299,7 +300,7 @@ static u64 tsc_read_refs(u64 *p, int hpet)
 		else
 			*p = acpi_pm_read_early();
 		t2 = get_cycles();
-		if ((t2 - t1) < SMI_TRESHOLD)
+		if ((t2 - t1) < thresh)
 			return t2;
 	}
 	return ULLONG_MAX;
@@ -612,31 +613,38 @@ unsigned long native_calibrate_tsc(void)
 
 	crystal_khz = ecx_hz / 1000;
 
-	if (crystal_khz == 0) {
-		switch (boot_cpu_data.x86_model) {
-		case INTEL_FAM6_SKYLAKE_MOBILE:
-		case INTEL_FAM6_SKYLAKE_DESKTOP:
-		case INTEL_FAM6_KABYLAKE_MOBILE:
-		case INTEL_FAM6_KABYLAKE_DESKTOP:
-			crystal_khz = 24000;	/* 24.0 MHz */
-			break;
-		case INTEL_FAM6_ATOM_GOLDMONT_X:
-			crystal_khz = 25000;	/* 25.0 MHz */
-			break;
-		case INTEL_FAM6_ATOM_GOLDMONT:
-			crystal_khz = 19200;	/* 19.2 MHz */
-			break;
-		}
+	/*
+	 * Denverton SoCs don't report crystal clock, and also don't support
+	 * CPUID.0x16 for the calculation below, so hardcode the 25MHz crystal
+	 * clock.
+	 */
+	if (crystal_khz == 0 &&
+			boot_cpu_data.x86_model == INTEL_FAM6_ATOM_GOLDMONT_X)
+		crystal_khz = 25000;
+
+	/*
+	 * TSC frequency reported directly by CPUID is a "hardware reported"
+	 * frequency and is the most accurate one so far we have. This
+	 * is considered a known frequency.
+	 */
+	if (crystal_khz != 0)
+		setup_force_cpu_cap(X86_FEATURE_TSC_KNOWN_FREQ);
+
+	/*
+	 * Some Intel SoCs like Skylake and Kabylake don't report the crystal
+	 * clock, but we can easily calculate it to a high degree of accuracy
+	 * by considering the crystal ratio and the CPU speed.
+	 */
+	if (crystal_khz == 0 && boot_cpu_data.cpuid_level >= 0x16) {
+		unsigned int eax_base_mhz, ebx, ecx, edx;
+
+		cpuid(0x16, &eax_base_mhz, &ebx, &ecx, &edx);
+		crystal_khz = eax_base_mhz * 1000 *
+			eax_denominator / ebx_numerator;
 	}
 
 	if (crystal_khz == 0)
 		return 0;
-	/*
-	 * TSC frequency determined by CPUID is a "hardware reported"
-	 * frequency and is the most accurate one so far we have. This
-	 * is considered a known frequency.
-	 */
-	setup_force_cpu_cap(X86_FEATURE_TSC_KNOWN_FREQ);
 
 	/*
 	 * For Atom SoCs TSC is the only reliable clocksource.
@@ -700,15 +708,15 @@ unsigned long native_calibrate_cpu(void)
 	 * zero. In each wait loop iteration we read the TSC and check
 	 * the delta to the previous read. We keep track of the min
 	 * and max values of that delta. The delta is mostly defined
-	 * by the IO time of the PIT access, so we can detect when a
-	 * SMI/SMM disturbance happened between the two reads. If the
+	 * by the IO time of the PIT access, so we can detect when
+	 * any disturbance happened between the two reads. If the
 	 * maximum time is significantly larger than the minimum time,
 	 * then we discard the result and have another try.
 	 *
 	 * 2) Reference counter. If available we use the HPET or the
 	 * PMTIMER as a reference to check the sanity of that value.
 	 * We use separate TSC readouts and check inside of the
-	 * reference read for a SMI/SMM disturbance. We dicard
+	 * reference read for any possible disturbance. We dicard
 	 * disturbed values here as well. We do that around the PIT
 	 * calibration delay loop as we have to wait for a certain
 	 * amount of time anyway.
@@ -741,7 +749,7 @@ unsigned long native_calibrate_cpu(void)
 		if (ref1 == ref2)
 			continue;
 
-		/* Check, whether the sampling was disturbed by an SMI */
+		/* Check, whether the sampling was disturbed */
 		if (tsc1 == ULLONG_MAX || tsc2 == ULLONG_MAX)
 			continue;
 
@@ -1180,7 +1188,7 @@ static DECLARE_DELAYED_WORK(tsc_irqwork, tsc_refine_calibration_work);
  */
 static void tsc_refine_calibration_work(struct work_struct *work)
 {
-	static u64 tsc_start = -1, ref_start;
+	static u64 tsc_start = ULLONG_MAX, ref_start;
 	static int hpet;
 	u64 tsc_stop, ref_stop, delta;
 	unsigned long freq;
@@ -1195,14 +1203,15 @@ static void tsc_refine_calibration_work(struct work_struct *work)
 	 * delayed the first time we expire. So set the workqueue
 	 * again once we know timers are working.
 	 */
-	if (tsc_start == -1) {
+	if (tsc_start == ULLONG_MAX) {
+restart:
 		/*
 		 * Only set hpet once, to avoid mixing hardware
 		 * if the hpet becomes enabled later.
 		 */
 		hpet = is_hpet_enabled();
-		schedule_delayed_work(&tsc_irqwork, HZ);
 		tsc_start = tsc_read_refs(&ref_start, hpet);
+		schedule_delayed_work(&tsc_irqwork, HZ);
 		return;
 	}
 
@@ -1212,9 +1221,9 @@ static void tsc_refine_calibration_work(struct work_struct *work)
 	if (ref_start == ref_stop)
 		goto out;
 
-	/* Check, whether the sampling was disturbed by an SMI */
-	if (tsc_start == ULLONG_MAX || tsc_stop == ULLONG_MAX)
-		goto out;
+	/* Check, whether the sampling was disturbed */
+	if (tsc_stop == ULLONG_MAX)
+		goto restart;
 
 	delta = tsc_stop - tsc_start;
 	delta *= 1000000LL;
