@@ -1,3 +1,13 @@
+linux (4.15.0-108.109) bionic; urgency=medium
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+
+  * dkms-build: downloads fail in private PPAs (LP: #1883874)
+    - dkms-build: apt-cache policy elides username:password information
+
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Fri, 19 Jun 2020 13:07:28 +0200
+
 linux (4.15.0-106.107) bionic; urgency=medium
 
   * CVE-2020-0543
