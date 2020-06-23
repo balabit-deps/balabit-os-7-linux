@@ -139,13 +139,71 @@ static void add_extent_changeset(struct extent_state *state, unsigned bits,
 	BUG_ON(ret < 0);
 }
 
-static noinline void flush_write_bio(void *data);
 static inline struct btrfs_fs_info *
 tree_fs_info(struct extent_io_tree *tree)
 {
 	if (tree->ops)
 		return tree->ops->tree_fs_info(tree->private_data);
 	return NULL;
+}
+
+static int __must_check submit_one_bio(struct bio *bio, int mirror_num,
+				       unsigned long bio_flags)
+{
+	blk_status_t ret = 0;
+	struct bio_vec *bvec = bio->bi_io_vec + bio->bi_vcnt - 1;
+	struct page *page = bvec->bv_page;
+	struct extent_io_tree *tree = bio->bi_private;
+	u64 start;
+
+	start = page_offset(page) + bvec->bv_offset;
+
+	bio->bi_private = NULL;
+	bio_get(bio);
+
+	if (tree->ops)
+		ret = tree->ops->submit_bio_hook(tree->private_data, bio,
+					   mirror_num, bio_flags, start);
+	else
+		btrfsic_submit_bio(bio);
+
+	bio_put(bio);
+	return blk_status_to_errno(ret);
+}
+
+
+/* Cleanup unsubmitted bios */
+static void end_write_bio(struct extent_page_data *epd, int ret)
+{
+	if (epd->bio) {
+		epd->bio->bi_status = errno_to_blk_status(ret);
+		bio_endio(epd->bio);
+		epd->bio = NULL;
+	}
+}
+
+/*
+ * Submit bio from extent page data via submit_one_bio
+ *
+ * Return 0 if everything is OK.
+ * Return <0 for error.
+ */
+static int __must_check flush_write_bio(struct extent_page_data *epd)
+{
+	int ret = 0;
+
+	if (epd->bio) {
+		ret = submit_one_bio(epd->bio, 0, 0);
+		/*
+		 * Clean up of epd->bio is handled by its endio function.
+		 * And endio is either triggered by successful bio execution
+		 * or the error handler of submit bio hook.
+		 * So at this point, no matter what happened, we don't need
+		 * to clean up epd->bio.
+		 */
+		epd->bio = NULL;
+	}
+	return ret;
 }
 
 int __init extent_io_init(void)
@@ -2720,30 +2778,6 @@ struct bio *btrfs_bio_clone_partial(struct bio *orig, int offset, int size)
 	return bio;
 }
 
-static int __must_check submit_one_bio(struct bio *bio, int mirror_num,
-				       unsigned long bio_flags)
-{
-	blk_status_t ret = 0;
-	struct bio_vec *bvec = bio->bi_io_vec + bio->bi_vcnt - 1;
-	struct page *page = bvec->bv_page;
-	struct extent_io_tree *tree = bio->bi_private;
-	u64 start;
-
-	start = page_offset(page) + bvec->bv_offset;
-
-	bio->bi_private = NULL;
-	bio_get(bio);
-
-	if (tree->ops)
-		ret = tree->ops->submit_bio_hook(tree->private_data, bio,
-					   mirror_num, bio_flags, start);
-	else
-		btrfsic_submit_bio(bio);
-
-	bio_put(bio);
-	return blk_status_to_errno(ret);
-}
-
 static int merge_bio(struct extent_io_tree *tree, struct page *page,
 		     unsigned long offset, size_t size, struct bio *bio,
 		     unsigned long bio_flags)
@@ -3545,7 +3579,8 @@ lock_extent_buffer_for_io(struct extent_buffer *eb,
 
 	if (!btrfs_try_tree_write_lock(eb)) {
 		flush = 1;
-		flush_write_bio(epd);
+		ret = flush_write_bio(epd);
+		BUG_ON(ret < 0);
 		btrfs_tree_lock(eb);
 	}
 
@@ -3554,7 +3589,8 @@ lock_extent_buffer_for_io(struct extent_buffer *eb,
 		if (!epd->sync_io)
 			return 0;
 		if (!flush) {
-			flush_write_bio(epd);
+			ret = flush_write_bio(epd);
+			BUG_ON(ret < 0);
 			flush = 1;
 		}
 		while (1) {
@@ -3595,7 +3631,8 @@ lock_extent_buffer_for_io(struct extent_buffer *eb,
 
 		if (!trylock_page(p)) {
 			if (!flush) {
-				flush_write_bio(epd);
+				ret = flush_write_bio(epd);
+				BUG_ON(ret < 0);
 				flush = 1;
 			}
 			lock_page(p);
@@ -3786,6 +3823,7 @@ int btree_write_cache_pages(struct address_space *mapping,
 		.sync_io = wbc->sync_mode == WB_SYNC_ALL,
 	};
 	int ret = 0;
+	int flush_ret;
 	int done = 0;
 	int nr_to_write_done = 0;
 	struct pagevec pvec;
@@ -3885,7 +3923,44 @@ retry:
 		index = 0;
 		goto retry;
 	}
-	flush_write_bio(&epd);
+	ASSERT(ret <= 0);
+	if (ret < 0) {
+		end_write_bio(&epd, ret);
+		return ret;
+	}
+	/*
+	 * If something went wrong, don't allow any metadata write bio to be
+	 * submitted.
+	 *
+	 * This would prevent use-after-free if we had dirty pages not
+	 * cleaned up, which can still happen by fuzzed images.
+	 *
+	 * - Bad extent tree
+	 *   Allowing existing tree block to be allocated for other trees.
+	 *
+	 * - Log tree operations
+	 *   Exiting tree blocks get allocated to log tree, bumps its
+	 *   generation, then get cleaned in tree re-balance.
+	 *   Such tree block will not be written back, since it's clean,
+	 *   thus no WRITTEN flag set.
+	 *   And after log writes back, this tree block is not traced by
+	 *   any dirty extent_io_tree.
+	 *
+	 * - Offending tree block gets re-dirtied from its original owner
+	 *   Since it has bumped generation, no WRITTEN flag, it can be
+	 *   reused without COWing. This tree block will not be traced
+	 *   by btrfs_transaction::dirty_pages.
+	 *
+	 *   Now such dirty tree block will not be cleaned by any dirty
+	 *   extent io tree. Thus we don't want to submit such wild eb
+	 *   if the fs already has error.
+	 */
+	if (!test_bit(BTRFS_FS_STATE_ERROR, &fs_info->fs_state)) {
+		ret = flush_write_bio(&epd);
+	} else {
+		ret = -EUCLEAN;
+		end_write_bio(&epd, ret);
+	}
 	return ret;
 }
 
@@ -3906,8 +3981,7 @@ retry:
  */
 static int extent_write_cache_pages(struct address_space *mapping,
 			     struct writeback_control *wbc,
-			     writepage_t writepage, void *data,
-			     void (*flush_fn)(void *))
+			     writepage_t writepage, void *data)
 {
 	struct inode *inode = mapping->host;
 	int ret = 0;
@@ -3971,7 +4045,7 @@ retry:
 			 * mapping
 			 */
 			if (!trylock_page(page)) {
-				flush_fn(data);
+				flush_write_bio(data);
 				lock_page(page);
 			}
 
@@ -3982,7 +4056,7 @@ retry:
 
 			if (wbc->sync_mode != WB_SYNC_NONE) {
 				if (PageWriteback(page))
-					flush_fn(data);
+					flush_write_bio(data);
 				wait_on_page_writeback(page);
 			}
 
@@ -4049,17 +4123,12 @@ static void flush_epd_write_bio(struct extent_page_data *epd)
 	}
 }
 
-static noinline void flush_write_bio(void *data)
-{
-	struct extent_page_data *epd = data;
-	flush_epd_write_bio(epd);
-}
-
 int extent_write_full_page(struct extent_io_tree *tree, struct page *page,
 			  get_extent_t *get_extent,
 			  struct writeback_control *wbc)
 {
 	int ret;
+	int flush_ret;
 	struct extent_page_data epd = {
 		.bio = NULL,
 		.tree = tree,
@@ -4070,7 +4139,8 @@ int extent_write_full_page(struct extent_io_tree *tree, struct page *page,
 
 	ret = __extent_writepage(page, wbc, &epd);
 
-	flush_epd_write_bio(&epd);
+	flush_ret = flush_write_bio(&epd);
+	BUG_ON(flush_ret < 0);
 	return ret;
 }
 
@@ -4079,6 +4149,7 @@ int extent_write_locked_range(struct extent_io_tree *tree, struct inode *inode,
 			      int mode)
 {
 	int ret = 0;
+	int flush_ret;
 	struct address_space *mapping = inode->i_mapping;
 	struct page *page;
 	unsigned long nr_pages = (end - start + PAGE_SIZE) >>
@@ -4113,7 +4184,8 @@ int extent_write_locked_range(struct extent_io_tree *tree, struct inode *inode,
 		start += PAGE_SIZE;
 	}
 
-	flush_epd_write_bio(&epd);
+	flush_ret = flush_write_bio(&epd);
+	BUG_ON(flush_ret < 0);
 	return ret;
 }
 
@@ -4123,6 +4195,7 @@ int extent_writepages(struct extent_io_tree *tree,
 		      struct writeback_control *wbc)
 {
 	int ret = 0;
+	int flush_ret;
 	struct extent_page_data epd = {
 		.bio = NULL,
 		.tree = tree,
@@ -4131,9 +4204,9 @@ int extent_writepages(struct extent_io_tree *tree,
 		.sync_io = wbc->sync_mode == WB_SYNC_ALL,
 	};
 
-	ret = extent_write_cache_pages(mapping, wbc, __extent_writepage, &epd,
-				       flush_write_bio);
-	flush_epd_write_bio(&epd);
+	ret = extent_write_cache_pages(mapping, wbc, __extent_writepage, &epd);
+	flush_ret = flush_write_bio(&epd);
+	BUG_ON(flush_ret < 0);
 	return ret;
 }
 

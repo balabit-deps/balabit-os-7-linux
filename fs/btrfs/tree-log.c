@@ -292,7 +292,7 @@ struct walk_control {
 	 * inside it
 	 */
 	int (*process_func)(struct btrfs_root *log, struct extent_buffer *eb,
-			    struct walk_control *wc, u64 gen);
+			    struct walk_control *wc, u64 gen, int level);
 };
 
 /*
@@ -300,7 +300,7 @@ struct walk_control {
  */
 static int process_one_buffer(struct btrfs_root *log,
 			      struct extent_buffer *eb,
-			      struct walk_control *wc, u64 gen)
+			      struct walk_control *wc, u64 gen, int level)
 {
 	struct btrfs_fs_info *fs_info = log->fs_info;
 	int ret = 0;
@@ -310,7 +310,7 @@ static int process_one_buffer(struct btrfs_root *log,
 	 * pin down any logged extents, so we have to read the block.
 	 */
 	if (btrfs_fs_incompat(fs_info, MIXED_GROUPS)) {
-		ret = btrfs_read_buffer(eb, gen);
+		ret = btrfs_read_buffer(eb, gen, level, NULL);
 		if (ret)
 			return ret;
 	}
@@ -815,7 +815,8 @@ static noinline int replay_one_extent(struct btrfs_trans_handle *trans,
 						struct btrfs_ordered_sum,
 						list);
 				if (!ret)
-					ret = btrfs_del_csums(trans, fs_info,
+					ret = btrfs_del_csums(trans,
+							      fs_info->csum_root,
 							      sums->bytenr,
 							      sums->len);
 				if (!ret)
@@ -2335,17 +2336,16 @@ out:
  * back refs).
  */
 static int replay_one_buffer(struct btrfs_root *log, struct extent_buffer *eb,
-			     struct walk_control *wc, u64 gen)
+			     struct walk_control *wc, u64 gen, int level)
 {
 	int nritems;
 	struct btrfs_path *path;
 	struct btrfs_root *root = wc->replay_dest;
 	struct btrfs_key key;
-	int level;
 	int i;
 	int ret;
 
-	ret = btrfs_read_buffer(eb, gen);
+	ret = btrfs_read_buffer(eb, gen, level, NULL);
 	if (ret)
 		return ret;
 
@@ -2499,6 +2499,8 @@ static noinline int walk_down_log_tree(struct btrfs_trans_handle *trans,
 	WARN_ON(*level >= BTRFS_MAX_LEVEL);
 
 	while (*level > 0) {
+		struct btrfs_key first_key;
+
 		WARN_ON(*level < 0);
 		WARN_ON(*level >= BTRFS_MAX_LEVEL);
 		cur = path->nodes[*level];
@@ -2511,6 +2513,7 @@ static noinline int walk_down_log_tree(struct btrfs_trans_handle *trans,
 
 		bytenr = btrfs_node_blockptr(cur, path->slots[*level]);
 		ptr_gen = btrfs_node_ptr_generation(cur, path->slots[*level]);
+		btrfs_node_key_to_cpu(cur, &first_key, path->slots[*level]);
 		blocksize = fs_info->nodesize;
 
 		parent = path->nodes[*level];
@@ -2521,7 +2524,8 @@ static noinline int walk_down_log_tree(struct btrfs_trans_handle *trans,
 			return PTR_ERR(next);
 
 		if (*level == 1) {
-			ret = wc->process_func(root, next, wc, ptr_gen);
+			ret = wc->process_func(root, next, wc, ptr_gen,
+					       *level - 1);
 			if (ret) {
 				free_extent_buffer(next);
 				return ret;
@@ -2529,7 +2533,8 @@ static noinline int walk_down_log_tree(struct btrfs_trans_handle *trans,
 
 			path->slots[*level]++;
 			if (wc->free) {
-				ret = btrfs_read_buffer(next, ptr_gen);
+				ret = btrfs_read_buffer(next, ptr_gen,
+							*level - 1, &first_key);
 				if (ret) {
 					free_extent_buffer(next);
 					return ret;
@@ -2559,7 +2564,7 @@ static noinline int walk_down_log_tree(struct btrfs_trans_handle *trans,
 			free_extent_buffer(next);
 			continue;
 		}
-		ret = btrfs_read_buffer(next, ptr_gen);
+		ret = btrfs_read_buffer(next, ptr_gen, *level - 1, &first_key);
 		if (ret) {
 			free_extent_buffer(next);
 			return ret;
@@ -2609,7 +2614,8 @@ static noinline int walk_up_log_tree(struct btrfs_trans_handle *trans,
 
 			root_owner = btrfs_header_owner(parent);
 			ret = wc->process_func(root, path->nodes[*level], wc,
-				 btrfs_header_generation(path->nodes[*level]));
+				 btrfs_header_generation(path->nodes[*level]),
+				 *level);
 			if (ret)
 				return ret;
 
@@ -2691,7 +2697,8 @@ static int walk_log_tree(struct btrfs_trans_handle *trans,
 	/* was the root node processed? if not, catch it here */
 	if (path->nodes[orig_level]) {
 		ret = wc->process_func(log, path->nodes[orig_level], wc,
-			 btrfs_header_generation(path->nodes[orig_level]));
+			 btrfs_header_generation(path->nodes[orig_level]),
+			 orig_level);
 		if (ret)
 			goto out;
 		if (wc->free) {
@@ -3757,6 +3764,28 @@ static int log_inode_item(struct btrfs_trans_handle *trans,
 	return 0;
 }
 
+static int log_csums(struct btrfs_trans_handle *trans,
+		     struct btrfs_root *log_root,
+		     struct btrfs_ordered_sum *sums)
+{
+	int ret;
+
+	/*
+	 * Due to extent cloning, we might have logged a csum item that covers a
+	 * subrange of a cloned extent, and later we can end up logging a csum
+	 * item for a larger subrange of the same extent or the entire range.
+	 * This would leave csum items in the log tree that cover the same range
+	 * and break the searches for checksums in the log tree, resulting in
+	 * some checksums missing in the fs/subvolume tree. So just delete (or
+	 * trim and adjust) any existing csum items in the log for this range.
+	 */
+	ret = btrfs_del_csums(trans, log_root, sums->bytenr, sums->len);
+	if (ret)
+		return ret;
+
+	return btrfs_csum_file_blocks(trans, log_root, sums);
+}
+
 static noinline int copy_items(struct btrfs_trans_handle *trans,
 			       struct btrfs_inode *inode,
 			       struct btrfs_path *dst_path,
@@ -3879,7 +3908,7 @@ static noinline int copy_items(struct btrfs_trans_handle *trans,
 						   struct btrfs_ordered_sum,
 						   list);
 		if (!ret)
-			ret = btrfs_csum_file_blocks(trans, log, sums);
+			ret = log_csums(trans, log, sums);
 		list_del(&sums->list);
 		kfree(sums);
 	}
@@ -4037,7 +4066,7 @@ static int wait_ordered_extents(struct btrfs_trans_handle *trans,
 						   struct btrfs_ordered_sum,
 						   list);
 		if (!ret)
-			ret = btrfs_csum_file_blocks(trans, log, sums);
+			ret = log_csums(trans, log, sums);
 		list_del(&sums->list);
 		kfree(sums);
 	}

@@ -1438,6 +1438,21 @@ do {                                                                   \
 
 #define BTRFS_INODE_ROOT_ITEM_INIT	(1 << 31)
 
+#define BTRFS_INODE_FLAG_MASK						\
+	(BTRFS_INODE_NODATASUM |					\
+	 BTRFS_INODE_NODATACOW |					\
+	 BTRFS_INODE_READONLY |						\
+	 BTRFS_INODE_NOCOMPRESS |					\
+	 BTRFS_INODE_PREALLOC |						\
+	 BTRFS_INODE_SYNC |						\
+	 BTRFS_INODE_IMMUTABLE |					\
+	 BTRFS_INODE_APPEND |						\
+	 BTRFS_INODE_NODUMP |						\
+	 BTRFS_INODE_NOATIME |						\
+	 BTRFS_INODE_DIRSYNC |						\
+	 BTRFS_INODE_COMPRESS |						\
+	 BTRFS_INODE_ROOT_ITEM_INIT)
+
 struct btrfs_map_token {
 	const struct extent_buffer *eb;
 	char *kaddr;
@@ -2552,6 +2567,7 @@ enum btrfs_inline_ref_type {
 int btrfs_get_extent_inline_ref_type(const struct extent_buffer *eb,
 				     struct btrfs_extent_inline_ref *iref,
 				     enum btrfs_inline_ref_type is_data);
+u64 hash_extent_data_ref(u64 root_objectid, u64 owner, u64 offset);
 
 u64 btrfs_csum_bytes_to_leaves(struct btrfs_fs_info *fs_info, u64 csum_bytes);
 
@@ -3083,8 +3099,9 @@ int btrfs_find_name_in_ext_backref(struct btrfs_path *path,
 /* file-item.c */
 struct btrfs_dio_private;
 int btrfs_del_csums(struct btrfs_trans_handle *trans,
-		    struct btrfs_fs_info *fs_info, u64 bytenr, u64 len);
+		    struct btrfs_root *root, u64 bytenr, u64 len);
 blk_status_t btrfs_lookup_bio_sums(struct inode *inode, struct bio *bio, u32 *dst);
+
 blk_status_t btrfs_lookup_bio_sums_dio(struct inode *inode, struct bio *bio,
 			      u64 logical_offset);
 int btrfs_insert_file_extent(struct btrfs_trans_handle *trans,
