@@ -1,3 +1,15 @@
+linux (4.15.0-111.112) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-111.112 -proposed tracker (LP: #1886999)
+
+  * Bionic update: upstream stable patchset 2020-05-07 (LP: #1877461)
+    - SAUCE: mlxsw: Add missmerged ERR_PTR hunk
+
+  * linux 4.15.0-109-generic network DoS regression vs -108 (LP: #1886668)
+    - SAUCE: Revert "netprio_cgroup: Fix unlimited memory leak of v2 cgroups"
+
+ -- Khalid Elmously <khalid.elmously@canonical.com>  Thu, 09 Jul 2020 16:03:14 -0400
+
 linux (4.15.0-109.110) bionic; urgency=medium
 
   * Packaging resync (LP: #1786013)
