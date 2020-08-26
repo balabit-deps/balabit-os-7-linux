@@ -184,6 +184,8 @@ enum hns3_nic_state {
 #define HNS3_TXD_MSS_S				0
 #define HNS3_TXD_MSS_M				(0x3fff << HNS3_TXD_MSS_S)
 
+#define HNS3_TX_LAST_SIZE_M                    0xffff
+
 #define HNS3_VECTOR_TX_IRQ			BIT_ULL(0)
 #define HNS3_VECTOR_RX_IRQ			BIT_ULL(1)
 
@@ -191,7 +193,8 @@ enum hns3_nic_state {
 #define HNS3_VECTOR_INITED			1
 
 #define HNS3_MAX_BD_SIZE			65535
-#define HNS3_MAX_BD_PER_FRAG			8
+#define HNS3_MAX_BD_NUM_NORMAL			8
+#define HNS3_MAX_BD_NUM_TSO			63
 #define HNS3_MAX_BD_PER_PKT			MAX_SKB_FRAGS
 
 #define HNS3_VECTOR_GL0_OFFSET			0x100
@@ -365,6 +368,7 @@ struct ring_stats {
 			u64 tx_err_cnt;
 			u64 restart_queue;
 			u64 tx_busy;
+			u64 tx_copy;
 		};
 		struct {
 			u64 rx_pkts;
@@ -431,14 +435,6 @@ struct hns3_nic_ring_data {
 	int (*poll_one)(struct hns3_nic_ring_data *, int, void *);
 	void (*ex_process)(struct hns3_nic_ring_data *, struct sk_buff *);
 	void (*fini_process)(struct hns3_nic_ring_data *);
-};
-
-struct hns3_nic_ops {
-	int (*fill_desc)(struct hns3_enet_ring *ring, void *priv,
-			 int size, int frag_end, enum hns_desc_type type);
-	int (*maybe_stop_tx)(struct sk_buff **out_skb,
-			     int *bnum, struct hns3_enet_ring *ring);
-	void (*get_rxd_bnum)(u32 bnum_flag, int *out_bnum);
 };
 
 enum hns3_flow_level_range {
@@ -530,7 +526,6 @@ struct hns3_nic_priv {
 	u32 port_id;
 	struct net_device *netdev;
 	struct device *dev;
-	struct hns3_nic_ops ops;
 
 	/**
 	 * the cb for nic to manage the ring buffer, the first half of the

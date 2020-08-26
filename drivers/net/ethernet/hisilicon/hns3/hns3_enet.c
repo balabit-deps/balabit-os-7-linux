@@ -21,6 +21,8 @@
 #include "hnae3.h"
 #include "hns3_enet.h"
 
+#define hns3_tx_bd_count(S)	DIV_ROUND_UP(S, HNS3_MAX_BD_SIZE)
+
 static void hns3_clear_all_ring(struct hnae3_handle *h);
 static void hns3_force_clear_all_rx_ring(struct hnae3_handle *h);
 static void hns3_remove_hw_addr(struct net_device *netdev);
@@ -635,7 +637,7 @@ static int hns3_set_tso(struct sk_buff *skb, u32 *paylen,
 
 	/* normal or tunnel packet*/
 	l4_offset = l4.hdr - skb->data;
-	hdr_len = (l4.tcp->doff * 4) + l4_offset;
+	hdr_len = (l4.tcp->doff << 2) + l4_offset;
 
 	/* remove payload length from inner pseudo checksum when tso*/
 	l4_paylen = skb->len - l4_offset;
@@ -1099,8 +1101,8 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 
 	desc_cb->length = size;
 
-	frag_buf_num = (size + HNS3_MAX_BD_SIZE - 1) / HNS3_MAX_BD_SIZE;
-	sizeoflast = size % HNS3_MAX_BD_SIZE;
+	frag_buf_num = hns3_tx_bd_count(size);
+	sizeoflast = size & HNS3_TX_LAST_SIZE_M;
 	sizeoflast = sizeoflast ? sizeoflast : HNS3_MAX_BD_SIZE;
 
 	/* When frag size is bigger than hardware limit, split this frag */
@@ -1131,54 +1133,67 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 	return 0;
 }
 
-static int hns3_nic_maybe_stop_tso(struct sk_buff **out_skb, int *bnum,
-				   struct hns3_enet_ring *ring)
+static unsigned int hns3_nic_bd_num(struct sk_buff *skb)
 {
-	struct sk_buff *skb = *out_skb;
-	struct skb_frag_struct *frag;
-	int bdnum_for_frag;
-	int frag_num;
-	int buf_num;
-	int size;
+	unsigned int bd_num;
 	int i;
 
-	size = skb_headlen(skb);
-	buf_num = (size + HNS3_MAX_BD_SIZE - 1) / HNS3_MAX_BD_SIZE;
+	/* if the total len is within the max bd limit */
+	if (likely(skb->len <= HNS3_MAX_BD_SIZE))
+		return skb_shinfo(skb)->nr_frags + 1;
 
-	frag_num = skb_shinfo(skb)->nr_frags;
-	for (i = 0; i < frag_num; i++) {
-		frag = &skb_shinfo(skb)->frags[i];
-		size = skb_frag_size(frag);
-		bdnum_for_frag =
-			(size + HNS3_MAX_BD_SIZE - 1) / HNS3_MAX_BD_SIZE;
-		if (bdnum_for_frag > HNS3_MAX_BD_PER_FRAG)
-			return -ENOMEM;
+	bd_num = hns3_tx_bd_count(skb_headlen(skb));
 
-		buf_num += bdnum_for_frag;
+	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+		struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[i];
+		bd_num += hns3_tx_bd_count(skb_frag_size(frag));
 	}
 
-	if (buf_num > ring_space(ring))
-		return -EBUSY;
-
-	*bnum = buf_num;
-	return 0;
+	return bd_num;
 }
 
-static int hns3_nic_maybe_stop_tx(struct sk_buff **out_skb, int *bnum,
-				  struct hns3_enet_ring *ring)
+static int hns3_nic_maybe_stop_tx(struct hns3_enet_ring *ring,
+				  struct net_device *netdev,
+				  struct sk_buff *skb)
 {
-	struct sk_buff *skb = *out_skb;
-	int buf_num;
+	struct hns3_nic_priv *priv = netdev_priv(netdev);
+	struct hns3_nic_ring_data *ring_data =
+		&tx_ring_data(priv, skb->queue_mapping);
+	unsigned int bd_num;
 
-	/* No. of segments (plus a header) */
-	buf_num = skb_shinfo(skb)->nr_frags + 1;
+	bd_num = hns3_nic_bd_num(skb);
+	if (unlikely(bd_num > HNS3_MAX_BD_NUM_NORMAL)) {
+		if (__skb_linearize(skb))
+			return -ENOMEM;
 
-	if (unlikely(ring_space(ring) < buf_num))
-		return -EBUSY;
+		bd_num = hns3_nic_bd_num(skb);
+		if ((skb_is_gso(skb) && bd_num > HNS3_MAX_BD_NUM_TSO) ||
+		    (!skb_is_gso(skb) && bd_num > HNS3_MAX_BD_NUM_NORMAL))
+			return -ENOMEM;
 
-	*bnum = buf_num;
+		u64_stats_update_begin(&ring->syncp);
+		ring->stats.tx_copy++;
+		u64_stats_update_end(&ring->syncp);
+	}
 
-	return 0;
+	if (likely(ring_space(ring) >= bd_num))
+		return bd_num;
+
+
+	netif_stop_subqueue(netdev, ring_data->queue_index);
+	smp_mb(); /* Memory barrier before checking ring_space */
+
+	/* Start queue in case hns3_clean_tx_ring has just made room
+	 * available and has not seen the queue stopped state performed
+	 * by netif_stop_subqueue above.
+	 */
+	if (ring_space(ring) >= bd_num && netif_carrier_ok(netdev) &&
+	    !test_bit(HNS3_NIC_STATE_DOWN, &priv->state)) {
+		netif_start_subqueue(netdev, ring_data->queue_index);
+		return bd_num;
+	}
+
+	return -EBUSY;
 }
 
 static void hns3_clear_desc(struct hns3_enet_ring *ring, int next_to_use_orig)
@@ -1233,22 +1248,23 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 	/* Prefetch the data used later */
 	prefetch(skb->data);
 
-	switch (priv->ops.maybe_stop_tx(&skb, &buf_num, ring)) {
-	case -EBUSY:
-		u64_stats_update_begin(&ring->syncp);
-		ring->stats.tx_busy++;
-		u64_stats_update_end(&ring->syncp);
+	buf_num = hns3_nic_maybe_stop_tx(ring, netdev, skb);
+	if (unlikely(buf_num <= 0)) {
+		if (buf_num == -EBUSY) {
+			u64_stats_update_begin(&ring->syncp);
+			ring->stats.tx_busy++;
+			u64_stats_update_end(&ring->syncp);
+			return NETDEV_TX_BUSY;
+		} else if (buf_num == -ENOMEM) {
+			u64_stats_update_begin(&ring->syncp);
+			ring->stats.sw_err_cnt++;
+			u64_stats_update_end(&ring->syncp);
+		}
 
-		goto out_net_tx_busy;
-	case -ENOMEM:
-		u64_stats_update_begin(&ring->syncp);
-		ring->stats.sw_err_cnt++;
-		u64_stats_update_end(&ring->syncp);
-		netdev_err(netdev, "no memory to xmit!\n");
+		if (net_ratelimit())
+			netdev_err(netdev, "xmit error: %d!\n", buf_num);
 
 		goto out_err_tx_ok;
-	default:
-		break;
 	}
 
 	/* No. of segments (plus a header) */
@@ -1258,8 +1274,8 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 	next_to_use_head = ring->next_to_use;
 
-	ret = priv->ops.fill_desc(ring, skb, size, seg_num == 1 ? 1 : 0,
-				  DESC_TYPE_SKB);
+	ret = hns3_fill_desc(ring, skb, size, seg_num == 1 ? 1 : 0,
+			     DESC_TYPE_SKB);
 	if (ret)
 		goto head_fill_err;
 
@@ -1269,9 +1285,9 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 		frag = &skb_shinfo(skb)->frags[i - 1];
 		size = skb_frag_size(frag);
 
-		ret = priv->ops.fill_desc(ring, frag, size,
-					  seg_num - 1 == i ? 1 : 0,
-					  DESC_TYPE_PAGE);
+		ret = hns3_fill_desc(ring, frag, size,
+				     seg_num - 1 == i ? 1 : 0,
+				     DESC_TYPE_PAGE);
 
 		if (ret)
 			goto frag_fill_err;
@@ -1296,12 +1312,6 @@ head_fill_err:
 out_err_tx_ok:
 	dev_kfree_skb_any(skb);
 	return NETDEV_TX_OK;
-
-out_net_tx_busy:
-	netif_stop_subqueue(netdev, ring_data->queue_index);
-	smp_mb(); /* Commit all data before submit */
-
-	return NETDEV_TX_BUSY;
 }
 
 static int hns3_nic_net_set_mac_address(struct net_device *netdev, void *p)
@@ -1351,13 +1361,6 @@ static int hns3_nic_set_features(struct net_device *netdev,
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
 	struct hnae3_handle *h = priv->ae_handle;
 	int ret;
-
-	if (changed & (NETIF_F_TSO | NETIF_F_TSO6)) {
-		if (features & (NETIF_F_TSO | NETIF_F_TSO6))
-			priv->ops.maybe_stop_tx = hns3_nic_maybe_stop_tso;
-		else
-			priv->ops.maybe_stop_tx = hns3_nic_maybe_stop_tx;
-	}
 
 	if ((changed & NETIF_F_HW_VLAN_CTAG_FILTER) &&
 	    h->ae_algo->ops->enable_vlan_filter) {
@@ -2199,7 +2202,7 @@ void hns3_clean_tx_ring(struct hns3_enet_ring *ring)
 	dev_queue = netdev_get_tx_queue(netdev, ring->tqp->tqp_index);
 	netdev_tx_completed_queue(dev_queue, pkts, bytes);
 
-	if (unlikely(pkts && netif_carrier_ok(netdev) &&
+	if (unlikely(netif_carrier_ok(netdev) &&
 		     (ring_space(ring) > HNS3_MAX_BD_PER_PKT))) {
 		/* Make sure that anybody stopping the queue after this
 		 * sees the new next_to_clean.
@@ -3547,18 +3550,6 @@ static void hns3_del_all_fd_rules(struct net_device *netdev, bool clear_list)
 		h->ae_algo->ops->del_all_fd_entries(h, clear_list);
 }
 
-static void hns3_nic_set_priv_ops(struct net_device *netdev)
-{
-	struct hns3_nic_priv *priv = netdev_priv(netdev);
-
-	priv->ops.fill_desc = hns3_fill_desc;
-	if ((netdev->features & NETIF_F_TSO) ||
-	    (netdev->features & NETIF_F_TSO6))
-		priv->ops.maybe_stop_tx = hns3_nic_maybe_stop_tso;
-	else
-		priv->ops.maybe_stop_tx = hns3_nic_maybe_stop_tx;
-}
-
 static int hns3_client_start(struct hnae3_handle *handle)
 {
 	if (!handle->ae_algo->ops->client_start)
@@ -3607,7 +3598,6 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	netdev->netdev_ops = &hns3_nic_netdev_ops;
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 	hns3_ethtool_set_ops(netdev);
-	hns3_nic_set_priv_ops(netdev);
 
 	/* Carrier off reporting is important to ethtool even BEFORE open */
 	netif_carrier_off(netdev);
