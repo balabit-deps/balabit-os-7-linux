@@ -1,3 +1,15 @@
+linux (4.15.0-117.118) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-117.118 -proposed tracker (LP: #1894277)
+
+  * Packaging resync (LP: #1786013)
+    - [Packaging] update helper scripts
+
+  * CVE-2020-14386
+    - SAUCE: net/packet: fix overflow in tpacket_rcv
+
+ -- Marcelo Henrique Cerri <marcelo.cerri@canonical.com>  Fri, 04 Sep 2020 16:23:00 -0300
+
 linux (4.15.0-115.116) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-115.116 -proposed tracker (LP: #1893055)
