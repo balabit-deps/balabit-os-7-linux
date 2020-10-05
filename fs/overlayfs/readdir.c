@@ -296,7 +296,7 @@ static inline int ovl_dir_read(struct path *realpath,
 	struct file *realfile;
 	int err;
 
-	realfile = ovl_path_open(realpath, O_RDONLY | O_DIRECTORY);
+	realfile = ovl_path_open(realpath, O_RDONLY | O_LARGEFILE);
 	if (IS_ERR(realfile))
 		return PTR_ERR(realfile);
 
@@ -368,12 +368,6 @@ static int ovl_dir_read_merged(struct dentry *dentry, struct list_head *list,
 	for (idx = 0; idx != -1; idx = next) {
 		next = ovl_path_next(idx, dentry, &realpath);
 		rdd.is_upper = ovl_dentry_upper(dentry) == realpath.dentry;
-
-		err = ovl_creator_permission(dentry->d_sb,
-					     d_inode(realpath.dentry),
-					     MAY_READ);
-		if (err)
-			break;
 
 		if (next != -1) {
 			err = ovl_dir_read(&realpath, &rdd);
@@ -703,18 +697,14 @@ static int ovl_iterate(struct file *file, struct dir_context *ctx)
 	struct ovl_dir_file *od = file->private_data;
 	struct dentry *dentry = file->f_path.dentry;
 	struct ovl_cache_entry *p;
+	const struct cred *old_cred;
 	int err;
 
+	old_cred = ovl_override_creds(dentry->d_sb);
 	if (!ctx->pos)
 		ovl_dir_reset(file);
 
 	if (od->is_real) {
-		err = ovl_creator_permission(dentry->d_sb,
-					     file_inode(od->realfile),
-					     MAY_READ);
-		if (err)
-			return err;
-
 		/*
 		 * If parent is merge, then need to adjust d_ino for '..', if
 		 * dir is impure then need to adjust d_ino for copied up
@@ -723,17 +713,20 @@ static int ovl_iterate(struct file *file, struct dir_context *ctx)
 		if (ovl_same_sb(dentry->d_sb) &&
 		    (ovl_is_impure_dir(file) ||
 		     OVL_TYPE_MERGE(ovl_path_type(dentry->d_parent)))) {
-			return ovl_iterate_real(file, ctx);
+			err = ovl_iterate_real(file, ctx);
+		} else {
+			err = iterate_dir(od->realfile, ctx);
 		}
-		return iterate_dir(od->realfile, ctx);
+		goto out;
 	}
 
 	if (!od->cache) {
 		struct ovl_dir_cache *cache;
 
 		cache = ovl_cache_get(dentry);
+		err = PTR_ERR(cache);
 		if (IS_ERR(cache))
-			return PTR_ERR(cache);
+			goto out;
 
 		od->cache = cache;
 		ovl_seek_cursor(od, ctx->pos);
@@ -745,7 +738,7 @@ static int ovl_iterate(struct file *file, struct dir_context *ctx)
 			if (!p->ino) {
 				err = ovl_cache_update_ino(&file->f_path, p);
 				if (err)
-					return err;
+					goto out;
 			}
 			if (!dir_emit(ctx, p->name, p->len, p->ino, p->type))
 				break;
@@ -753,7 +746,10 @@ static int ovl_iterate(struct file *file, struct dir_context *ctx)
 		od->cursor = p->l_node.next;
 		ctx->pos++;
 	}
-	return 0;
+	err = 0;
+out:
+	revert_creds(old_cred);
+	return err;
 }
 
 static loff_t ovl_dir_llseek(struct file *file, loff_t offset, int origin)
@@ -796,6 +792,19 @@ out_unlock:
 	return res;
 }
 
+static struct file *ovl_dir_open_realfile(struct file *file,
+					  struct path *realpath)
+{
+	struct file *res;
+	const struct cred *old_cred;
+
+	old_cred = ovl_override_creds(file_inode(file)->i_sb);
+	res = ovl_path_open(realpath, O_RDONLY | (file->f_flags & O_LARGEFILE));
+	revert_creds(old_cred);
+
+	return res;
+}
+
 static int ovl_dir_fsync(struct file *file, loff_t start, loff_t end,
 			 int datasync)
 {
@@ -818,7 +827,7 @@ static int ovl_dir_fsync(struct file *file, loff_t start, loff_t end,
 			struct path upperpath;
 
 			ovl_path_upper(dentry, &upperpath);
-			realfile = ovl_path_open(&upperpath, O_RDONLY);
+			realfile = ovl_dir_open_realfile(file, &upperpath);
 
 			inode_lock(inode);
 			if (!od->upperfile) {
@@ -869,7 +878,7 @@ static int ovl_dir_open(struct inode *inode, struct file *file)
 		return -ENOMEM;
 
 	type = ovl_path_real(file->f_path.dentry, &realpath);
-	realfile = ovl_path_open(&realpath, file->f_flags);
+	realfile = ovl_dir_open_realfile(file, &realpath);
 	if (IS_ERR(realfile)) {
 		kfree(od);
 		return PTR_ERR(realfile);

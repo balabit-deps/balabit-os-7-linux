@@ -50,19 +50,6 @@ struct super_block *ovl_same_sb(struct super_block *sb)
 	return ofs->same_sb;
 }
 
-int ovl_creator_permission(struct super_block *sb, struct inode *inode,
-			   int mode)
-{
-	const struct cred *old_cred;
-	int err = 0;
-
-	old_cred = ovl_override_creds(sb);
-	err = inode_permission(inode, mode);
-	revert_creds(old_cred);
-
-	return err;
-}
-
 bool ovl_can_decode_fh(struct super_block *sb)
 {
 	return (sb->s_export_op && sb->s_export_op->fh_to_dentry &&
@@ -324,7 +311,32 @@ bool ovl_is_whiteout(struct dentry *dentry)
 
 struct file *ovl_path_open(struct path *path, int flags)
 {
-	return dentry_open(path, flags | O_NOATIME, current_cred());
+	struct inode *inode = d_inode(path->dentry);
+	int err, acc_mode;
+
+	if (flags & ~(O_ACCMODE | O_LARGEFILE))
+		BUG();
+
+	switch (flags & O_ACCMODE) {
+	case O_RDONLY:
+		acc_mode = MAY_READ;
+		break;
+	case O_WRONLY:
+		acc_mode = MAY_WRITE;
+		break;
+	default:
+		BUG();
+	}
+
+	err = inode_permission(inode, acc_mode | MAY_OPEN);
+	if (err)
+		return ERR_PTR(err);
+
+	/* O_NOATIME is an optimization, don't fail if not permitted */
+	if (inode_owner_or_capable(inode))
+		flags |= O_NOATIME;
+
+	return dentry_open(path, flags, current_cred());
 }
 
 int ovl_copy_up_start(struct dentry *dentry)
