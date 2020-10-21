@@ -1,3 +1,10 @@
+linux (4.15.0-123.126) bionic; urgency=medium
+
+  * CVE-2020-8694
+    - powercap: make attributes only readable by root
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Wed, 21 Oct 2020 11:12:40 +0200
+
 linux (4.15.0-122.124) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-122.124 -proposed tracker (LP: #1899941)
