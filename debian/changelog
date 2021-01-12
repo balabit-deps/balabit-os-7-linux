@@ -1,3 +1,15 @@
+linux (4.15.0-132.136) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-132.136 -proposed tracker (LP: #1911147)
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+
+  * CVE-2020-28374
+    - SAUCE: target: fix XCOPY NAA identifier lookup
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Tue, 12 Jan 2021 14:38:57 +0100
+
 linux (4.15.0-130.134) bionic; urgency=medium
 
   * Packaging resync (LP: #1786013)
