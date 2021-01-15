@@ -1,3 +1,10 @@
+linux (4.15.0-134.138) bionic; urgency=medium
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Fri, 15 Jan 2021 11:30:49 +0100
+
 linux (4.15.0-132.136) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-132.136 -proposed tracker (LP: #1911147)
