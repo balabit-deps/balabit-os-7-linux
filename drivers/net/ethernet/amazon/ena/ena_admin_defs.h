@@ -1,37 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0 OR Linux-OpenIB */
 /*
- * Copyright 2015 - 2016 Amazon.com, Inc. or its affiliates.
- *
- * This software is available to you under a choice of one of two
- * licenses.  You may choose to be licensed under the terms of the GNU
- * General Public License (GPL) Version 2, available from the file
- * COPYING in the main directory of this source tree, or the
- * BSD license below:
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      - Redistributions of source code must retain the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer.
- *
- *      - Redistributions in binary form must reproduce the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer in the documentation and/or other materials
- *        provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * Copyright 2015-2020 Amazon.com, Inc. or its affiliates. All rights reserved.
  */
 #ifndef _ENA_ADMIN_H_
 #define _ENA_ADMIN_H_
 
+#define ENA_ADMIN_RSS_KEY_PARTS              10
 
 enum ena_admin_aq_opcode {
 	ENA_ADMIN_CREATE_SQ                         = 1,
@@ -63,7 +37,7 @@ enum ena_admin_aq_feature_id {
 	ENA_ADMIN_MAX_QUEUES_EXT                    = 7,
 	ENA_ADMIN_RSS_HASH_FUNCTION                 = 10,
 	ENA_ADMIN_STATELESS_OFFLOAD_CONFIG          = 11,
-	ENA_ADMIN_RSS_REDIRECTION_TABLE_CONFIG      = 12,
+	ENA_ADMIN_RSS_INDIRECTION_TABLE_CONFIG      = 12,
 	ENA_ADMIN_MTU                               = 14,
 	ENA_ADMIN_RSS_HASH_INPUT                    = 18,
 	ENA_ADMIN_INTERRUPT_MODERATION              = 20,
@@ -117,6 +91,8 @@ enum ena_admin_completion_policy_type {
 enum ena_admin_get_stats_type {
 	ENA_ADMIN_GET_STATS_TYPE_BASIC              = 0,
 	ENA_ADMIN_GET_STATS_TYPE_EXTENDED           = 1,
+	/* extra HW stats for specific network interface */
+	ENA_ADMIN_GET_STATS_TYPE_ENI                = 2,
 };
 
 enum ena_admin_get_stats_scope {
@@ -406,10 +382,43 @@ struct ena_admin_basic_stats {
 	u32 rx_drops_high;
 };
 
+/* ENI Statistics Command. */
+struct ena_admin_eni_stats {
+	/* The number of packets shaped due to inbound aggregate BW
+	 * allowance being exceeded
+	 */
+	u64 bw_in_allowance_exceeded;
+
+	/* The number of packets shaped due to outbound aggregate BW
+	 * allowance being exceeded
+	 */
+	u64 bw_out_allowance_exceeded;
+
+	/* The number of packets shaped due to PPS allowance being exceeded */
+	u64 pps_allowance_exceeded;
+
+	/* The number of packets shaped due to connection tracking
+	 * allowance being exceeded and leading to failure in establishment
+	 * of new connections
+	 */
+	u64 conntrack_allowance_exceeded;
+
+	/* The number of packets shaped due to linklocal packet rate
+	 * allowance being exceeded
+	 */
+	u64 linklocal_allowance_exceeded;
+};
+
 struct ena_admin_acq_get_stats_resp {
 	struct ena_admin_acq_common_desc acq_common_desc;
 
-	struct ena_admin_basic_stats basic_stats;
+	union {
+		u64 raw[7];
+
+		struct ena_admin_basic_stats basic_stats;
+
+		struct ena_admin_eni_stats eni_stats;
+	} u;
 };
 
 struct ena_admin_get_set_feature_common_desc {
@@ -670,11 +679,11 @@ enum ena_admin_hash_functions {
 };
 
 struct ena_admin_feature_rss_flow_hash_control {
-	u32 keys_num;
+	u32 key_parts;
 
 	u32 reserved;
 
-	u32 key[10];
+	u32 key[ENA_ADMIN_RSS_KEY_PARTS];
 };
 
 struct ena_admin_feature_rss_flow_hash_function {
