@@ -1,3 +1,17 @@
+linux (4.15.0-139.143) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-139.143 -proposed tracker (LP: #1919218)
+
+  * CVE-2021-27365
+    - scsi: iscsi: Verify lengths on passthrough PDUs
+    - sysfs: Add sysfs_emit and sysfs_emit_at to format sysfs output
+    - scsi: iscsi: Ensure sysfs attributes are limited to PAGE_SIZE
+
+  * CVE-2021-27363 // CVE-2021-27364
+    - scsi: iscsi: Restrict sessions and handles to admin capabilities
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Mon, 15 Mar 2021 17:54:59 -0300
+
 linux (4.15.0-137.141) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-137.141 -proposed tracker (LP: #1916199)
