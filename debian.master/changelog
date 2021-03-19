@@ -1,3 +1,15 @@
+linux (4.15.0-140.144) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-140.144 -proposed tracker (LP: #1920169)
+
+  * CVE-2020-27170
+    - bpf: Fix off-by-one for area size in creating mask to left
+
+  * CVE-2020-27171
+    - bpf: Prohibit alu ops for pointer types not defining ptr_limit
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Fri, 19 Mar 2021 09:17:46 -0300
+
 linux (4.15.0-139.143) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-139.143 -proposed tracker (LP: #1919218)
