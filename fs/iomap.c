@@ -683,6 +683,8 @@ EXPORT_SYMBOL_GPL(iomap_seek_data);
  * Private flags for iomap_dio, must not overlap with the public ones in
  * iomap.h:
  */
+#define IOMAP_DIO_WRITE_FUA	(1 << 28)
+#define IOMAP_DIO_NEED_SYNC	(1 << 29)
 #define IOMAP_DIO_WRITE		(1 << 30)
 #define IOMAP_DIO_DIRTY		(1 << 31)
 
@@ -758,6 +760,13 @@ static ssize_t iomap_dio_complete(struct iomap_dio *dio)
 			dio_warn_stale_pagecache(iocb->ki_filp);
 	}
 
+	/*
+	 * If this is a DSYNC write, make sure we push it to stable storage now
+	 * that we've written data.
+	 */
+	if (ret > 0 && (dio->flags & IOMAP_DIO_NEED_SYNC))
+		ret = generic_write_sync(iocb, ret);
+
 	inode_dio_end(file_inode(iocb->ki_filp));
 	kfree(dio);
 
@@ -768,13 +777,8 @@ static void iomap_dio_complete_work(struct work_struct *work)
 {
 	struct iomap_dio *dio = container_of(work, struct iomap_dio, aio.work);
 	struct kiocb *iocb = dio->iocb;
-	bool is_write = (dio->flags & IOMAP_DIO_WRITE);
-	ssize_t ret;
 
-	ret = iomap_dio_complete(dio);
-	if (is_write && ret > 0)
-		ret = generic_write_sync(iocb, ret);
-	iocb->ki_complete(iocb, ret, 0);
+	iocb->ki_complete(iocb, iomap_dio_complete(dio), 0);
 }
 
 /*
@@ -856,6 +860,7 @@ iomap_dio_actor(struct inode *inode, loff_t pos, loff_t length,
 	struct iov_iter iter;
 	struct bio *bio;
 	bool need_zeroout = false;
+	bool use_fua = false;
 	int nr_pages, ret = 0;
 	size_t copied = 0;
 
@@ -879,8 +884,20 @@ iomap_dio_actor(struct inode *inode, loff_t pos, loff_t length,
 	case IOMAP_MAPPED:
 		if (iomap->flags & IOMAP_F_SHARED)
 			dio->flags |= IOMAP_DIO_COW;
-		if (iomap->flags & IOMAP_F_NEW)
+		if (iomap->flags & IOMAP_F_NEW) {
 			need_zeroout = true;
+		} else {
+			/*
+			 * Use a FUA write if we need datasync semantics, this
+			 * is a pure data IO that doesn't require any metadata
+			 * updates and the underlying device supports FUA. This
+			 * allows us to avoid cache flushes on IO completion.
+			 */
+			if (!(iomap->flags & (IOMAP_F_SHARED|IOMAP_F_DIRTY)) &&
+			    (dio->flags & IOMAP_DIO_WRITE_FUA) &&
+			    blk_queue_fua(bdev_get_queue(iomap->bdev)))
+				use_fua = true;
+		}
 		break;
 	default:
 		WARN_ON_ONCE(1);
@@ -934,10 +951,14 @@ iomap_dio_actor(struct inode *inode, loff_t pos, loff_t length,
 
 		n = bio->bi_iter.bi_size;
 		if (dio->flags & IOMAP_DIO_WRITE) {
-			bio_set_op_attrs(bio, REQ_OP_WRITE, REQ_SYNC | REQ_IDLE);
+			bio->bi_opf = REQ_OP_WRITE | REQ_SYNC | REQ_IDLE;
+			if (use_fua)
+				bio->bi_opf |= REQ_FUA;
+			else
+				dio->flags &= ~IOMAP_DIO_WRITE_FUA;
 			task_io_account_write(n);
 		} else {
-			bio_set_op_attrs(bio, REQ_OP_READ, 0);
+			bio->bi_opf = REQ_OP_READ;
 			if (dio->flags & IOMAP_DIO_DIRTY)
 				bio_set_pages_dirty(bio);
 		}
@@ -973,6 +994,15 @@ zero_tail:
 	return copied ? copied : ret;
 }
 
+/*
+ * iomap_dio_rw() always completes O_[D]SYNC writes regardless of whether the IO
+ * is being issued as AIO or not.  This allows us to optimise pure data writes
+ * to use REQ_FUA rather than requiring generic_write_sync() to issue a
+ * REQ_FLUSH post write. This is slightly tricky because a single request here
+ * can be mapped into multiple disjoint IOs and only a subset of the IOs issued
+ * may be pure data writes. In that case, we still need to do a full data sync
+ * completion.
+ */
 ssize_t
 iomap_dio_rw(struct kiocb *iocb, struct iov_iter *iter,
 		const struct iomap_ops *ops, iomap_dio_end_io_t end_io)
@@ -1016,8 +1046,21 @@ iomap_dio_rw(struct kiocb *iocb, struct iov_iter *iter,
 		if (iter->type == ITER_IOVEC)
 			dio->flags |= IOMAP_DIO_DIRTY;
 	} else {
-		dio->flags |= IOMAP_DIO_WRITE;
 		flags |= IOMAP_WRITE;
+		dio->flags |= IOMAP_DIO_WRITE;
+
+		/* for data sync or sync, we need sync completion processing */
+		if (iocb->ki_flags & IOCB_DSYNC)
+			dio->flags |= IOMAP_DIO_NEED_SYNC;
+
+		/*
+		 * For datasync only writes, we optimistically try using FUA for
+		 * this IO.  Any non-FUA write that occurs will clear this flag,
+		 * hence we know before completion whether a cache flush is
+		 * necessary.
+		 */
+		if ((iocb->ki_flags & (IOCB_DSYNC | IOCB_SYNC)) == IOCB_DSYNC)
+			dio->flags |= IOMAP_DIO_WRITE_FUA;
 	}
 
 	if (iocb->ki_flags & IOCB_NOWAIT) {
@@ -1081,6 +1124,13 @@ iomap_dio_rw(struct kiocb *iocb, struct iov_iter *iter,
 
 	if (ret < 0)
 		iomap_dio_set_error(dio, ret);
+
+	/*
+	 * If all the writes we issued were FUA, we don't need to flush the
+	 * cache on IO completion. Clear the sync flag for this case.
+	 */
+	if (dio->flags & IOMAP_DIO_WRITE_FUA)
+		dio->flags &= ~IOMAP_DIO_NEED_SYNC;
 
 	/*
 	 * We are about to drop our additional submission reference, which
