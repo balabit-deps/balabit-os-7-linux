@@ -459,6 +459,15 @@ static int verify_level_key(struct btrfs_fs_info *fs_info,
 	if (!first_key)
 		return 0;
 
+	/*
+	 * For live tree block (new tree blocks in current transaction),
+	 * we need proper lock context to avoid race, which is impossible here.
+	 * So we only checks tree blocks which is read from disk, whose
+	 * generation <= fs_info->last_trans_committed.
+	 */
+	if (btrfs_header_generation(eb) > fs_info->last_trans_committed)
+		return 0;
+
 	/* We have @first_key, so this @eb must have at least one item */
 	if (btrfs_header_nritems(eb) == 0) {
 		btrfs_err(fs_info,
@@ -522,15 +531,6 @@ static int btree_read_extent_buffer_pages(struct btrfs_fs_info *fs_info,
 			else
 				break;
 		}
-
-		/*
-		 * This buffer's crc is fine, but its contents are corrupted, so
-		 * there is no reason to read the other copies, they won't be
-		 * any less wrong.
-		 */
-		if (test_bit(EXTENT_BUFFER_CORRUPT, &eb->bflags) ||
-		    ret == -EUCLEAN)
-			break;
 
 		num_copies = btrfs_num_copies(fs_info,
 					      eb->start, eb->len);

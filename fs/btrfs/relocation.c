@@ -1855,7 +1855,7 @@ again:
 		old_bytenr = btrfs_node_blockptr(parent, slot);
 		blocksize = fs_info->nodesize;
 		old_ptr_gen = btrfs_node_ptr_generation(parent, slot);
-		btrfs_node_key_to_cpu(parent, &key, slot);
+		btrfs_node_key_to_cpu(parent, &first_key, slot);
 
 		if (level <= max_level) {
 			eb = path->nodes[level];
@@ -2457,15 +2457,8 @@ again:
 			}
 		} else {
 			if (!IS_ERR(root)) {
-				if (root->reloc_root == reloc_root) {
+				if (root->reloc_root == reloc_root)
 					root->reloc_root = NULL;
-					free_extent_buffer(root->reloc_root->node);
-					free_extent_buffer(root->reloc_root->commit_root);
-					btrfs_put_fs_root(reloc_root);
-				}
-				free_extent_buffer(root->node);
-				free_extent_buffer(root->commit_root);
-				btrfs_put_fs_root(root);
 			}
 
 			list_del_init(&reloc_root->root_list);
