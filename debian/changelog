@@ -1,3 +1,11 @@
+linux (4.15.0-158.166) bionic; urgency=medium
+
+  * s390x BPF JIT vulnerabilities (LP: #1943960)
+    - SAUCE: s390/bpf: Fix 64-bit subtraction of the -0x80000000 constant
+    - SAUCE: s390/bpf: Fix optimizing out zero-extensions
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Fri, 17 Sep 2021 13:44:16 -0300
+
 linux (4.15.0-156.163) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-156.163 -proposed tracker (LP: #1940162)
