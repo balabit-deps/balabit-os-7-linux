@@ -1,3 +1,13 @@
+linux (4.15.0-188.199) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-188.199 -proposed tracker (LP: #1978697)
+
+  * CVE-2022-28388
+    - can: usb_8dev: usb_8dev_start_xmit(): fix double dev_kfree_skb() in error
+      path
+
+ -- Luke Nowakowski-Krijger <luke.nowakowskikrijger@canonical.com>  Wed, 15 Jun 2022 13:23:15 -0700
+
 linux (4.15.0-187.198) bionic; urgency=medium
 
   * CVE-2022-21123 // CVE-2022-21125 // CVE-2022-21166
