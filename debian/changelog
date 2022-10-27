@@ -1,3 +1,13 @@
+linux (4.15.0-196.207) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-196.207 -proposed tracker (LP: #1994992)
+
+  * [UBUNTU 18.04] Ubuntu 18.04 kernel 4.15.0-194 crashes on IPL (LP: #1994601)
+    - SAUCE: Revert "s390/archrandom: simplify back to earlier design and
+      initialize earlier"
+
+ -- Luke Nowakowski-Krijger <luke.nowakowskikrijger@canonical.com>  Thu, 27 Oct 2022 13:56:02 -0700
+
 linux (4.15.0-194.205) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-194.205 -proposed tracker (LP: #1989935)
