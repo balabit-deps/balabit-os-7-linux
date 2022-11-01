@@ -1150,7 +1150,6 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			ret = fb_set_var(info, &var);
 			info->flags &= ~FBINFO_MISC_USEREVENT;
 		}
-		lock_fb_info(info);
 		unlock_fb_info(info);
 		console_unlock();
 		if (!ret && copy_to_user(argp, &var, sizeof(var)))

@@ -125,7 +125,7 @@ int tcp_twsk_unique(struct sock *sk, struct sock *sktw, void *twp)
 	   and use initial timestamp retrieved from peer table.
 	 */
 	if (tcptw->tw_ts_recent_stamp &&
-	    (!twp || (sock_net(sk)->ipv4.sysctl_tcp_tw_reuse &&
+	    (!twp || (READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_tw_reuse) &&
 			     get_seconds() - tcptw->tw_ts_recent_stamp > 1))) {
 		tp->write_seq = tcptw->tw_snd_nxt + 65535 + 2;
 		if (tp->write_seq == 0)

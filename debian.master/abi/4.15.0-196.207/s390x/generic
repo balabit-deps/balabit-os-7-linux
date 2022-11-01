@@ -4474,6 +4474,7 @@ EXPORT_SYMBOL vmlinux 0xb4be81d6	__secpath_destroy
 EXPORT_SYMBOL vmlinux 0xb50cc9cb	ZSTD_isFrame
 EXPORT_SYMBOL vmlinux 0xb51ff4af	kbd_ioctl
 EXPORT_SYMBOL vmlinux 0xb5259af6	pci_read_config_dword
+EXPORT_SYMBOL vmlinux 0xb5573d0b	s390_arch_random_generate
 EXPORT_SYMBOL vmlinux 0xb55f4b0b	file_open_root
 EXPORT_SYMBOL vmlinux 0xb569ed17	from_kgid_munged
 EXPORT_SYMBOL vmlinux 0xb57343c2	frontswap_shrink
