@@ -1,3 +1,39 @@
+linux (4.15.0-200.211) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-200.211 -proposed tracker (LP: #1997465)
+
+  * CVE-2022-3239
+    - media: em28xx: initialize refcount before kref_get
+
+  * CVE-2022-3524
+    - tcp/udp: Fix memory leak in ipv6_renew_options().
+
+  * CVE-2022-3564
+    - Bluetooth: L2CAP: Fix use-after-free caused by l2cap_reassemble_sdu
+
+  * CVE-2022-3565
+    - mISDN: fix use-after-free bugs in l1oip timer handlers
+
+  * CVE-2022-3566
+    - tcp: Fix data races around icsk->icsk_af_ops.
+
+  * CVE-2022-3567
+    - ipv6: annotate some data-races around sk->sk_prot
+    - ipv6: Fix data races around sk->sk_prot.
+
+  * CVE-2022-3594
+    - r8152: Rate limit overflow messages
+
+  * CVE-2022-3621
+    - nilfs2: fix NULL pointer dereference at nilfs_bmap_lookup_at_level()
+
+  * CVE-2022-42703
+    - mm/rmap.c: don't reuse anon_vma if we just want a copy
+    - mm: rmap: explicitly reset vma->anon_vma in unlink_anon_vmas()
+    - mm/rmap: Fix anon_vma->degree ambiguity leading to double-reuse
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Thu, 24 Nov 2022 14:47:04 -0300
+
 linux (4.15.0-197.208) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-197.208 -proposed tracker (LP: #1994998)
