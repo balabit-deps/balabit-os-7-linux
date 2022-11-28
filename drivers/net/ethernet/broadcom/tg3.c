@@ -820,7 +820,7 @@ static int tg3_ape_event_lock(struct tg3 *tp, u32 timeout_us)
 
 		tg3_ape_unlock(tp, TG3_APE_LOCK_MEM);
 
-		usleep_range(10, 20);
+		udelay(10);
 		timeout_us -= (timeout_us > 10) ? 10 : timeout_us;
 	}
 
@@ -18170,16 +18170,20 @@ static void tg3_shutdown(struct pci_dev *pdev)
 	struct net_device *dev = pci_get_drvdata(pdev);
 	struct tg3 *tp = netdev_priv(dev);
 
+	tg3_reset_task_cancel(tp);
+
 	rtnl_lock();
+
 	netif_device_detach(dev);
 
 	if (netif_running(dev))
 		dev_close(dev);
 
-	if (system_state == SYSTEM_POWER_OFF)
-		tg3_power_down(tp);
+	tg3_power_down(tp);
 
 	rtnl_unlock();
+
+	pci_disable_device(pdev);
 }
 
 /**
