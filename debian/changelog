@@ -1,3 +1,22 @@
+linux (4.15.0-202.213) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-202.213 -proposed tracker (LP: #2002005)
+
+  * CVE-2022-3643
+    - xen/netback: Ensure protocol headers don't fall in the non-linear area
+
+  * CVE-2022-45934
+    - Bluetooth: L2CAP: Fix u8 overflow
+
+  * CVE-2022-42896
+    - Bluetooth: L2CAP: Fix accepting connection request for invalid SPSM
+    - Bluetooth: L2CAP: Fix l2cap_global_chan_by_psm
+
+  * CVE-2022-43945
+    - NFSD: Cap rsize_bop result based on send buffer size
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Thu, 05 Jan 2023 15:35:53 -0300
+
 linux (4.15.0-201.212) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-201.212 -proposed tracker (LP: #1997871)

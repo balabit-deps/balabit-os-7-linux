@@ -1306,9 +1306,9 @@ EXPORT_SYMBOL net/9p/9pnet 0xfbbb30be	p9dirent_read
 EXPORT_SYMBOL net/9p/9pnet 0xfd40c79d	p9_idpool_check
 EXPORT_SYMBOL net/9p/9pnet 0xff2e15df	p9_client_stat
 EXPORT_SYMBOL net/bridge/bridge 0x4e97e85e	br_should_route_hook
-EXPORT_SYMBOL net/bridge/netfilter/ebtables 0x492679c0	ebt_unregister_table
-EXPORT_SYMBOL net/bridge/netfilter/ebtables 0xad79d703	ebt_register_table
-EXPORT_SYMBOL net/bridge/netfilter/ebtables 0xfac3c5d2	ebt_do_table
+EXPORT_SYMBOL net/bridge/netfilter/ebtables 0x0ebc7a01	ebt_do_table
+EXPORT_SYMBOL net/bridge/netfilter/ebtables 0x4b4bbe75	ebt_register_table
+EXPORT_SYMBOL net/bridge/netfilter/ebtables 0xc108a961	ebt_unregister_table
 EXPORT_SYMBOL net/ceph/libceph 0x000e4d74	ceph_pg_poolid_by_name
 EXPORT_SYMBOL net/ceph/libceph 0x00e607c8	osd_req_op_cls_request_data_pagelist
 EXPORT_SYMBOL net/ceph/libceph 0x01006f87	ceph_create_snap_context
