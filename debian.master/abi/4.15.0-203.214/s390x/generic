@@ -8359,6 +8359,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x26fbd672	ftrace_set_notrace
 EXPORT_SYMBOL_GPL vmlinux 0x27046576	kvm_exit
 EXPORT_SYMBOL_GPL vmlinux 0x271301d3	xfrm_audit_state_replay_overflow
 EXPORT_SYMBOL_GPL vmlinux 0x2733a7a8	restore_online_page_callback
+EXPORT_SYMBOL_GPL vmlinux 0x274f2751	tcp_cong_avoid_ai
 EXPORT_SYMBOL_GPL vmlinux 0x27545244	atomic_notifier_chain_register
 EXPORT_SYMBOL_GPL vmlinux 0x275b3f4c	pci_cfg_access_trylock
 EXPORT_SYMBOL_GPL vmlinux 0x27740af7	watchdog_unregister_device
@@ -8424,6 +8425,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x2d1b02d2	usermodehelper_read_lock_wait
 EXPORT_SYMBOL_GPL vmlinux 0x2d41e6f5	__trace_puts
 EXPORT_SYMBOL_GPL vmlinux 0x2d7c73b5	kstrdup_quotable
 EXPORT_SYMBOL_GPL vmlinux 0x2d7fb99e	posix_clock_register
+EXPORT_SYMBOL_GPL vmlinux 0x2d847305	tcp_slow_start
 EXPORT_SYMBOL_GPL vmlinux 0x2da91e90	rsa_parse_pub_key
 EXPORT_SYMBOL_GPL vmlinux 0x2db1bfcc	serdev_controller_add
 EXPORT_SYMBOL_GPL vmlinux 0x2dde1e90	fwnode_get_next_child_node
@@ -8549,7 +8551,6 @@ EXPORT_SYMBOL_GPL vmlinux 0x385ccf06	clone_private_mount
 EXPORT_SYMBOL_GPL vmlinux 0x386d41c5	hrtimer_init_sleeper
 EXPORT_SYMBOL_GPL vmlinux 0x3873e4b8	raw_v6_hashinfo
 EXPORT_SYMBOL_GPL vmlinux 0x3890f202	get_empty_filp
-EXPORT_SYMBOL_GPL vmlinux 0x38a26d72	tcp_cong_avoid_ai
 EXPORT_SYMBOL_GPL vmlinux 0x38bc9a44	fsnotify_init_mark
 EXPORT_SYMBOL_GPL vmlinux 0x38c03db5	css_sch_device_unregister
 EXPORT_SYMBOL_GPL vmlinux 0x38e226f6	pci_ioremap_bar
@@ -10642,7 +10643,6 @@ EXPORT_SYMBOL_GPL vmlinux 0xef13106c	nr_threads
 EXPORT_SYMBOL_GPL vmlinux 0xef2c0a02	ip_build_and_send_pkt
 EXPORT_SYMBOL_GPL vmlinux 0xef32565c	security_file_permission
 EXPORT_SYMBOL_GPL vmlinux 0xef344f9c	unregister_kretprobes
-EXPORT_SYMBOL_GPL vmlinux 0xef4ebddc	tcp_slow_start
 EXPORT_SYMBOL_GPL vmlinux 0xef6be4d2	inet6_hash_connect
 EXPORT_SYMBOL_GPL vmlinux 0xef6c3f70	round_jiffies_up_relative
 EXPORT_SYMBOL_GPL vmlinux 0xef763ae6	gpiod_get_direction

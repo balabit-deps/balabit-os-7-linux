@@ -11994,6 +11994,7 @@ EXPORT_SYMBOL_GPL drivers/acpi/sbshc 0xb9a141b0	acpi_smbus_read
 EXPORT_SYMBOL_GPL drivers/acpi/sbshc 0xe1372311	acpi_smbus_write
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x021f2cd9	ahci_handle_port_intr
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x07ae7237	ahci_set_em_messages
+EXPORT_SYMBOL_GPL drivers/ata/libahci 0x090e73e9	ahci_fill_cmd_slot
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x0b48622e	ahci_save_initial_config
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x13a0ee64	ahci_pmp_retry_srst_ops
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x13cccf30	ahci_init_controller
@@ -12011,7 +12012,6 @@ EXPORT_SYMBOL_GPL drivers/ata/libahci 0x8e9e770a	ahci_start_engine
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x9db71464	ahci_sdev_attrs
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0xaea88ad9	ahci_do_softreset
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0xb2d9254f	ahci_reset_em
-EXPORT_SYMBOL_GPL drivers/ata/libahci 0xb58d7aac	ahci_fill_cmd_slot
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0xe57d3aad	ahci_shost_attrs
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0xe600824c	ahci_ops
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0xea50dad3	ahci_ignore_sss
@@ -18730,7 +18730,6 @@ EXPORT_SYMBOL_GPL vmlinux 0x289eb615	irq_set_affinity_notifier
 EXPORT_SYMBOL_GPL vmlinux 0x28aa6a67	call_rcu
 EXPORT_SYMBOL_GPL vmlinux 0x28ab4fb9	pinctrl_gpio_free
 EXPORT_SYMBOL_GPL vmlinux 0x28cc4c76	__efivar_entry_iter
-EXPORT_SYMBOL_GPL vmlinux 0x28e341c9	tcp_slow_start
 EXPORT_SYMBOL_GPL vmlinux 0x28e64c64	xen_has_pv_and_legacy_disk_devices
 EXPORT_SYMBOL_GPL vmlinux 0x28e98cd0	balloon_page_alloc
 EXPORT_SYMBOL_GPL vmlinux 0x290917f5	sha1_zero_message_hash
@@ -19004,6 +19003,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x3756f2b3	nvdimm_bus_attribute_group
 EXPORT_SYMBOL_GPL vmlinux 0x3775806a	fpu__initialize
 EXPORT_SYMBOL_GPL vmlinux 0x377bbcbc	pm_suspend_target_state
 EXPORT_SYMBOL_GPL vmlinux 0x37bba971	register_user_hw_breakpoint
+EXPORT_SYMBOL_GPL vmlinux 0x37c17592	tcp_cong_avoid_ai
 EXPORT_SYMBOL_GPL vmlinux 0x37e0b5d1	component_bind_all
 EXPORT_SYMBOL_GPL vmlinux 0x37e3da64	ping_unhash
 EXPORT_SYMBOL_GPL vmlinux 0x3801776b	__ioread32_copy
@@ -19012,6 +19012,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x38501a5b	pm_genpd_remove
 EXPORT_SYMBOL_GPL vmlinux 0x3866e217	nvmem_device_write
 EXPORT_SYMBOL_GPL vmlinux 0x3871e881	gov_attr_set_get
 EXPORT_SYMBOL_GPL vmlinux 0x38722f80	kernel_fpu_end
+EXPORT_SYMBOL_GPL vmlinux 0x38789c0e	x86_cpu_has_min_microcode_rev
 EXPORT_SYMBOL_GPL vmlinux 0x388925b2	nl_table_lock
 EXPORT_SYMBOL_GPL vmlinux 0x388b4b6c	gpiochip_generic_config
 EXPORT_SYMBOL_GPL vmlinux 0x3893e295	dev_pm_qos_add_request
@@ -19059,7 +19060,6 @@ EXPORT_SYMBOL_GPL vmlinux 0x3acdf325	twl4030_audio_enable_resource
 EXPORT_SYMBOL_GPL vmlinux 0x3ad0e201	scatterwalk_copychunks
 EXPORT_SYMBOL_GPL vmlinux 0x3ad1b334	fwnode_property_read_string_array
 EXPORT_SYMBOL_GPL vmlinux 0x3aded5cb	sysfs_break_active_protection
-EXPORT_SYMBOL_GPL vmlinux 0x3adf702a	tcp_cong_avoid_ai
 EXPORT_SYMBOL_GPL vmlinux 0x3af5c90e	kobject_create_and_add
 EXPORT_SYMBOL_GPL vmlinux 0x3affdc05	reset_controller_register
 EXPORT_SYMBOL_GPL vmlinux 0x3b27d212	ip6_push_pending_frames
@@ -19600,6 +19600,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x579e0bf5	rtnl_unregister_all
 EXPORT_SYMBOL_GPL vmlinux 0x57bef57b	ata_dummy_port_info
 EXPORT_SYMBOL_GPL vmlinux 0x57bf2fe0	key_type_user
 EXPORT_SYMBOL_GPL vmlinux 0x57c39727	kdb_register_flags
+EXPORT_SYMBOL_GPL vmlinux 0x57d0d27e	tcp_slow_start
 EXPORT_SYMBOL_GPL vmlinux 0x57d7d4c9	extcon_get_property_capability
 EXPORT_SYMBOL_GPL vmlinux 0x57f30dc8	sata_std_hardreset
 EXPORT_SYMBOL_GPL vmlinux 0x580b7937	wm8350_set_bits
@@ -19708,6 +19709,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x5d51530f	genphy_c45_an_disable_aneg
 EXPORT_SYMBOL_GPL vmlinux 0x5d64aeab	md_find_rdev_nr_rcu
 EXPORT_SYMBOL_GPL vmlinux 0x5d9ef08d	bind_interdomain_evtchn_to_irq_lateeoi
 EXPORT_SYMBOL_GPL vmlinux 0x5d9f7127	pci_epc_clear_bar
+EXPORT_SYMBOL_GPL vmlinux 0x5da28f15	spec_ctrl_current
 EXPORT_SYMBOL_GPL vmlinux 0x5da67adc	zs_compact
 EXPORT_SYMBOL_GPL vmlinux 0x5da8ff36	ata_std_postreset
 EXPORT_SYMBOL_GPL vmlinux 0x5dbcfa4f	boot_cpu_physical_apicid
@@ -20594,6 +20596,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x8c254f8b	rio_register_scan
 EXPORT_SYMBOL_GPL vmlinux 0x8c261e06	tracepoint_probe_unregister
 EXPORT_SYMBOL_GPL vmlinux 0x8c29a50b	acpiphp_unregister_attention
 EXPORT_SYMBOL_GPL vmlinux 0x8c3d7670	file_ra_state_init
+EXPORT_SYMBOL_GPL vmlinux 0x8c64f42c	x86_spec_ctrl_current
 EXPORT_SYMBOL_GPL vmlinux 0x8c6737e9	tpm_pm_suspend
 EXPORT_SYMBOL_GPL vmlinux 0x8c69c527	crypto_init_shash_spawn
 EXPORT_SYMBOL_GPL vmlinux 0x8c743fb6	reset_control_status

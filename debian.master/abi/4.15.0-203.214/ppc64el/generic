@@ -11162,8 +11162,8 @@ EXPORT_SYMBOL_GPL drivers/ata/libahci 0x4a887c11	ahci_check_ready
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x4cee73eb	ahci_init_controller
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x5f5eb7d5	ahci_host_activate
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x6199f374	ahci_do_hardreset
+EXPORT_SYMBOL_GPL drivers/ata/libahci 0x77868b4c	ahci_fill_cmd_slot
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x8aa2ea1b	ahci_shost_attrs
-EXPORT_SYMBOL_GPL drivers/ata/libahci 0x8c0962a1	ahci_fill_cmd_slot
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x8f2365d6	ahci_reset_controller
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0x8f9a2962	ahci_set_em_messages
 EXPORT_SYMBOL_GPL drivers/ata/libahci 0xbe00708c	ahci_ops
@@ -16959,7 +16959,6 @@ EXPORT_SYMBOL_GPL vmlinux 0x0fe7dede	do_xdp_generic
 EXPORT_SYMBOL_GPL vmlinux 0x0ff425e4	cgroup_get_from_path
 EXPORT_SYMBOL_GPL vmlinux 0x10138352	tracing_on
 EXPORT_SYMBOL_GPL vmlinux 0x102cd73b	dma_request_slave_channel
-EXPORT_SYMBOL_GPL vmlinux 0x10364301	tcp_cong_avoid_ai
 EXPORT_SYMBOL_GPL vmlinux 0x10479f2a	init_srcu_struct
 EXPORT_SYMBOL_GPL vmlinux 0x104e83f8	blk_rq_prep_clone
 EXPORT_SYMBOL_GPL vmlinux 0x10662924	rhashtable_free_and_destroy
@@ -19382,6 +19381,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x9316f417	rio_release_inb_pwrite
 EXPORT_SYMBOL_GPL vmlinux 0x9316f561	raw_seq_open
 EXPORT_SYMBOL_GPL vmlinux 0x93170790	blk_fill_rwbs
 EXPORT_SYMBOL_GPL vmlinux 0x93311080	opal_flash_read
+EXPORT_SYMBOL_GPL vmlinux 0x934049ee	tcp_slow_start
 EXPORT_SYMBOL_GPL vmlinux 0x93489280	ping_proc_register
 EXPORT_SYMBOL_GPL vmlinux 0x934ba278	devm_regulator_put
 EXPORT_SYMBOL_GPL vmlinux 0x934d68a0	led_trigger_blink
@@ -19938,6 +19938,7 @@ EXPORT_SYMBOL_GPL vmlinux 0xb1bed25d	dpm_resume_start
 EXPORT_SYMBOL_GPL vmlinux 0xb1c0c1c2	async_schedule_domain
 EXPORT_SYMBOL_GPL vmlinux 0xb1d17434	class_find_device
 EXPORT_SYMBOL_GPL vmlinux 0xb1d20bf7	crypto_register_template
+EXPORT_SYMBOL_GPL vmlinux 0xb1d9ca69	tcp_cong_avoid_ai
 EXPORT_SYMBOL_GPL vmlinux 0xb1dabc1e	unregister_ftrace_export
 EXPORT_SYMBOL_GPL vmlinux 0xb1e1ccb0	devfreq_event_set_event
 EXPORT_SYMBOL_GPL vmlinux 0xb1e25684	__trace_bputs
@@ -20663,7 +20664,6 @@ EXPORT_SYMBOL_GPL vmlinux 0xd7ee6d64	ata_sff_drain_fifo
 EXPORT_SYMBOL_GPL vmlinux 0xd808d2b6	pci_generic_config_read32
 EXPORT_SYMBOL_GPL vmlinux 0xd81de62c	ring_buffer_record_enable
 EXPORT_SYMBOL_GPL vmlinux 0xd8263870	mmu_slb_size
-EXPORT_SYMBOL_GPL vmlinux 0xd8284216	tcp_slow_start
 EXPORT_SYMBOL_GPL vmlinux 0xd83c29f2	device_rename
 EXPORT_SYMBOL_GPL vmlinux 0xd83ffa14	serial8250_do_set_mctrl
 EXPORT_SYMBOL_GPL vmlinux 0xd84d35bd	dax_read_lock

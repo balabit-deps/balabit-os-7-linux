@@ -1910,7 +1910,7 @@ static int scan_its_table(struct vgic_its *its, gpa_t base, int size, int esz,
 
 	memset(entry, 0, esz);
 
-	while (len > 0) {
+	while (true) {
 		int next_offset;
 		size_t byte_offset;
 
@@ -1923,6 +1923,9 @@ static int scan_its_table(struct vgic_its *its, gpa_t base, int size, int esz,
 			return next_offset;
 
 		byte_offset = next_offset * esz;
+		if (byte_offset >= len)
+			break;
+
 		id += next_offset;
 		gpa += byte_offset;
 		len -= byte_offset;
