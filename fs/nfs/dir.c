@@ -2294,9 +2294,31 @@ static struct nfs_access_entry *nfs_access_search_rbtree(struct inode *inode, st
 	return NULL;
 }
 
+static u64 nfs_access_login_time(const struct task_struct *task,
+				 const struct cred *cred)
+{
+	const struct task_struct *parent;
+	const struct cred *pcred;
+	u64 ret;
+
+	rcu_read_lock();
+	for (;;) {
+		parent = rcu_dereference(task->real_parent);
+		pcred = rcu_dereference(parent->cred);
+		if (parent == task || cred_fscmp(pcred, cred) != 0)
+			break;
+		task = parent;
+	}
+	ret = task->start_time;
+	rcu_read_unlock();
+	return ret;
+}
+
 static int nfs_access_get_cached(struct inode *inode, struct rpc_cred *cred, struct nfs_access_entry *res, bool may_block)
 {
 	struct nfs_inode *nfsi = NFS_I(inode);
+	const struct cred *cur_cred = current_cred();
+	u64 login_time = nfs_access_login_time(current, cur_cred);
 	struct nfs_access_entry *cache;
 	bool retry = true;
 	int err;
@@ -2324,6 +2346,9 @@ static int nfs_access_get_cached(struct inode *inode, struct rpc_cred *cred, str
 		spin_lock(&inode->i_lock);
 		retry = false;
 	}
+	err = -ENOENT;
+	if ((s64)(login_time - cache->timestamp) > 0)
+		goto out;
 	res->cred = cache->cred;
 	res->mask = cache->mask;
 	list_move_tail(&cache->lru, &nfsi->access_cache_entry_lru);
@@ -2343,6 +2368,8 @@ static int nfs_access_get_cached_rcu(struct inode *inode, struct rpc_cred *cred,
 	 * but do it without locking.
 	 */
 	struct nfs_inode *nfsi = NFS_I(inode);
+	const struct cred *cur_cred = current_cred();
+	u64 login_time = nfs_access_login_time(current, cur_cred);
 	struct nfs_access_entry *cache;
 	int err = -ECHILD;
 	struct list_head *lh;
@@ -2356,6 +2383,8 @@ static int nfs_access_get_cached_rcu(struct inode *inode, struct rpc_cred *cred,
 	    cred != cache->cred)
 		cache = NULL;
 	if (cache == NULL)
+		goto out;
+	if ((s64)(login_time - cache->timestamp) > 0)
 		goto out;
 	if (nfs_check_cache_invalid(inode, NFS_INO_INVALID_ACCESS))
 		goto out;
@@ -2387,6 +2416,7 @@ static void nfs_access_add_rbtree(struct inode *inode, struct nfs_access_entry *
 		else
 			goto found;
 	}
+	set->timestamp = ktime_get_ns();
 	rb_link_node(&set->rb_node, parent, p);
 	rb_insert_color(&set->rb_node, root_node);
 	list_add_tail(&set->lru, &nfsi->access_cache_entry_lru);

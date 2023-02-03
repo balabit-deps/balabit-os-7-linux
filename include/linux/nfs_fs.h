@@ -52,6 +52,7 @@ struct nfs_access_entry {
 	struct rb_node		rb_node;
 	struct list_head	lru;
 	struct rpc_cred *	cred;
+	u64                     timestamp;
 	__u32			mask;
 	struct rcu_head		rcu_head;
 };
