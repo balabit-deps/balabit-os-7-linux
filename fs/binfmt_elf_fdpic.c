@@ -439,8 +439,9 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 #endif
 
 	install_exec_creds(bprm);
-	if (create_elf_fdpic_tables(bprm, current->mm,
-				    &exec_params, &interp_params) < 0)
+	retval = create_elf_fdpic_tables(bprm, current->mm, &exec_params,
+					 &interp_params);
+	if (retval < 0)
 		goto error;
 
 	kdebug("- start_code  %lx", current->mm->start_code);
