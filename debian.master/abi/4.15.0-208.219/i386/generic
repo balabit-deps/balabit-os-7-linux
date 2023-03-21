@@ -18988,6 +18988,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x3afff78f	sdio_register_driver
 EXPORT_SYMBOL_GPL vmlinux 0x3b1b2967	nvmem_cell_read_u32
 EXPORT_SYMBOL_GPL vmlinux 0x3b25e49a	rio_mport_class
 EXPORT_SYMBOL_GPL vmlinux 0x3b2b0843	usb_altnum_to_altsetting
+EXPORT_SYMBOL_GPL vmlinux 0x3b2e1916	usb_control_msg_recv
 EXPORT_SYMBOL_GPL vmlinux 0x3b44f1b1	balloon_page_alloc
 EXPORT_SYMBOL_GPL vmlinux 0x3b496b6c	spi_sync_locked
 EXPORT_SYMBOL_GPL vmlinux 0x3b670955	pci_msi_mask_irq
@@ -20113,6 +20114,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x73dd06e5	relay_close
 EXPORT_SYMBOL_GPL vmlinux 0x73f10383	digsig_verify
 EXPORT_SYMBOL_GPL vmlinux 0x73f2d01d	__platform_driver_probe
 EXPORT_SYMBOL_GPL vmlinux 0x73ff1cea	dev_pm_qos_add_request
+EXPORT_SYMBOL_GPL vmlinux 0x741fb7b9	usb_pipe_type_check
 EXPORT_SYMBOL_GPL vmlinux 0x743a165e	ata_pack_xfermask
 EXPORT_SYMBOL_GPL vmlinux 0x74457e56	apei_resources_fini
 EXPORT_SYMBOL_GPL vmlinux 0x7452adff	user_return_notifier_register
@@ -21441,6 +21443,7 @@ EXPORT_SYMBOL_GPL vmlinux 0xbc860f50	ablkcipher_walk_done
 EXPORT_SYMBOL_GPL vmlinux 0xbc91a165	serdev_controller_remove
 EXPORT_SYMBOL_GPL vmlinux 0xbca0201a	sfi_mrtc_array
 EXPORT_SYMBOL_GPL vmlinux 0xbcac6160	pm_qos_remove_notifier
+EXPORT_SYMBOL_GPL vmlinux 0xbcacaabb	usb_control_msg_send
 EXPORT_SYMBOL_GPL vmlinux 0xbcb838a1	amd_flush_garts
 EXPORT_SYMBOL_GPL vmlinux 0xbcc1e962	pci_enable_rom
 EXPORT_SYMBOL_GPL vmlinux 0xbccfd4d8	register_oldmem_pfn_is_ram

@@ -33,6 +33,7 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/netlink.h>
+#include <linux/nospec.h>
 
 #include <net/arp.h>
 #include <net/ip.h>
@@ -1037,6 +1038,7 @@ fib_convert_metrics(struct fib_info *fi, const struct fib_config *cfg)
 		if (type > RTAX_MAX)
 			return -EINVAL;
 
+		type = array_index_nospec(type, RTAX_MAX + 1);
 		if (type == RTAX_CC_ALGO) {
 			char tmp[TCP_CA_NAME_MAX];
 

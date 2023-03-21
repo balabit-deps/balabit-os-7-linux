@@ -18411,6 +18411,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x1ebf6c2a	pci_power_names
 EXPORT_SYMBOL_GPL vmlinux 0x1ec2defb	scsi_bus_type
 EXPORT_SYMBOL_GPL vmlinux 0x1ed72345	skb_zerocopy_headlen
 EXPORT_SYMBOL_GPL vmlinux 0x1eef1d2e	device_get_named_child_node
+EXPORT_SYMBOL_GPL vmlinux 0x1f17f439	usb_pipe_type_check
 EXPORT_SYMBOL_GPL vmlinux 0x1f1d94fb	reservation_object_wait_timeout_rcu
 EXPORT_SYMBOL_GPL vmlinux 0x1f28c92a	sysfs_merge_group
 EXPORT_SYMBOL_GPL vmlinux 0x1f2ed6a9	ata_pci_bmdma_clear_simplex
@@ -19282,6 +19283,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x49cdb3cb	bus_set_iommu
 EXPORT_SYMBOL_GPL vmlinux 0x49d76b7b	perf_event_disable
 EXPORT_SYMBOL_GPL vmlinux 0x49e96999	cond_synchronize_rcu
 EXPORT_SYMBOL_GPL vmlinux 0x49f52a57	edac_pci_free_ctl_info
+EXPORT_SYMBOL_GPL vmlinux 0x4a284855	usb_control_msg_recv
 EXPORT_SYMBOL_GPL vmlinux 0x4a420d09	acpi_bus_detach_private_data
 EXPORT_SYMBOL_GPL vmlinux 0x4a479df8	acpi_subsys_runtime_resume
 EXPORT_SYMBOL_GPL vmlinux 0x4a5ac73f	dummy_irq_chip
@@ -19805,6 +19807,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x6480a976	ata_link_next
 EXPORT_SYMBOL_GPL vmlinux 0x6484571f	mddev_init_writes_pending
 EXPORT_SYMBOL_GPL vmlinux 0x6487a5b2	irq_domain_remove
 EXPORT_SYMBOL_GPL vmlinux 0x64a2dd84	iommu_detach_group
+EXPORT_SYMBOL_GPL vmlinux 0x64ae155b	usb_control_msg_send
 EXPORT_SYMBOL_GPL vmlinux 0x64b7069e	apei_mce_report_mem_error
 EXPORT_SYMBOL_GPL vmlinux 0x64e36955	usb_alloc_urb
 EXPORT_SYMBOL_GPL vmlinux 0x64ed164e	crypto_alloc_instance

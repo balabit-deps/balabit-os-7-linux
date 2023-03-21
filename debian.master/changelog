@@ -1,6 +1,119 @@
-linux (4.15.0-208.220) bionic; urgency=medium
+linux (4.15.0-209.220) bionic; urgency=medium
 
-  * bionic/linux: 4.15.0-208.220 -proposed tracker (LP: #2012097)
+  * bionic/linux: 4.15.0-209.220 -proposed tracker (LP: #2011989)
+
+  * CVE-2023-26545
+    - net: mpls: fix stale pointer if allocation fails during device rename
+
+  * CVE-2023-1281
+    - rcu: Upgrade rcu_swap_protected() to rcu_replace_pointer()
+    - net/sched: tcindex: update imperfect hash filters respecting rcu
+
+  * CVE-2022-3903
+    - USB: add usb_control_msg_send() and usb_control_msg_recv()
+    - USB: correct API of usb_control_msg_send/recv
+    - USB: move snd_usb_pipe_sanity_check into the USB core
+    - media: mceusb: Use new usb_control_msg_*() routines
+
+  * Bionic update: upstream stable patchset 2023-03-03 (LP: #2009237)
+    - pNFS/filelayout: Fix coalescing test for single DS
+    - net/ethtool/ioctl: return -EOPNOTSUPP if we have no phy stats
+    - RDMA/srp: Move large values to a new enum for gcc13
+    - f2fs: let's avoid panic if extent_tree is not created
+    - nilfs2: fix general protection fault in nilfs_btree_insert()
+    - xhci-pci: set the dma max_seg_size
+    - usb: xhci: Check endpoint is valid before dereferencing it
+    - prlimit: do_prlimit needs to have a speculation check
+    - USB: serial: option: add Quectel EM05-G (GR) modem
+    - USB: serial: option: add Quectel EM05-G (CS) modem
+    - USB: serial: option: add Quectel EM05-G (RS) modem
+    - USB: serial: option: add Quectel EC200U modem
+    - USB: serial: option: add Quectel EM05CN (SG) modem
+    - USB: serial: option: add Quectel EM05CN modem
+    - USB: misc: iowarrior: fix up header size for USB_DEVICE_ID_CODEMERCS_IOW100
+    - usb: core: hub: disable autosuspend for TI TUSB8041
+    - USB: serial: cp210x: add SCALANCE LPE-9000 device id
+    - usb: host: ehci-fsl: Fix module alias
+    - usb: gadget: g_webcam: Send color matching descriptor per frame
+    - usb: gadget: f_ncm: fix potential NULL ptr deref in ncm_bitrate()
+    - usb-storage: apply IGNORE_UAS only for HIKSEMI MD202 on RTL9210
+    - serial: pch_uart: Pass correct sg to dma_unmap_sg()
+    - serial: atmel: fix incorrect baudrate setup
+    - gsmi: fix null-deref in gsmi_get_variable
+    - comedi: adv_pci1760: Fix PWM instruction handling
+    - ARM: dts: imx6qdl-gw560x: Remove incorrect 'uart-has-rtscts'
+    - HID: intel_ish-hid: Add check for ishtp_dma_tx_map
+    - EDAC/highbank: Fix memory leak in highbank_mc_probe()
+    - tomoyo: fix broken dependency on *.conf.default
+    - IB/hfi1: Reject a zero-length user expected buffer
+    - IB/hfi1: Reserve user expected TIDs
+    - affs: initialize fsdata in affs_truncate()
+    - amd-xgbe: TX Flow Ctrl Registers are h/w ver dependent
+    - phy: rockchip-inno-usb2: Fix missing clk_disable_unprepare() in
+      rockchip_usb2phy_power_on()
+    - net: nfc: Fix use-after-free in local_cleanup()
+    - net: usb: sr9700: Handle negative len
+    - net: mdio: validate parameter addr in mdiobus_get_phy()
+    - HID: check empty report_list in hid_validate_values()
+    - usb: gadget: f_fs: Prevent race during ffs_ep0_queue_wait
+    - usb: gadget: f_fs: Ensure ep0req is dequeued before free_request
+    - net: mlx5: eliminate anonymous module_init & module_exit
+    - dmaengine: Fix double increment of client_count in dma_chan_get()
+    - HID: betop: check shape of output reports
+    - w1: fix deadloop in __w1_remove_master_device()
+    - w1: fix WARNING after calling w1_process()
+    - fs: reiserfs: remove useless new_opts in reiserfs_remount
+    - Bluetooth: hci_sync: cancel cmd_timer if hci_open failed
+    - scsi: hpsa: Fix allocation size for scsi_host_alloc()
+    - module: Don't wait for GOING modules
+    - tracing: Make sure trace_printk() can output as soon as it can be used
+    - ARM: 9280/1: mm: fix warning on phys_addr_t to void pointer assignment
+    - EDAC/device: Respect any driver-supplied workqueue polling value
+    - netlink: annotate data races around dst_portid and dst_group
+    - netlink: annotate data races around sk_state
+    - netfilter: conntrack: fix vtag checks for ABORT/SHUTDOWN_COMPLETE
+    - netrom: Fix use-after-free of a listening socket.
+    - sctp: fail if no bound addresses can be used for a given scope
+    - net: ravb: Fix possible hang if RIS2_QFF1 happen
+    - net/tg3: resolve deadlock in tg3_reset_task() during EEH
+    - Revert "Input: synaptics - switch touchpad on HP Laptop 15-da3001TU to RMI
+      mode"
+    - x86/i8259: Mark legacy PIC interrupts with IRQ_LEVEL
+    - xen: Fix up build warning with xen_init_time_ops() reference
+    - x86/asm: Fix an assembler warning with current binutils
+    - x86/entry/64: Add instruction suffix to SYSRET
+    - sysctl: add a new register_sysctl_init() interface
+    - panic: unset panic_on_warn inside panic()
+    - exit: Add and use make_task_dead.
+    - objtool: Add a missing comma to avoid string concatenation
+    - hexagon: Fix function name in die()
+    - h8300: Fix build errors from do_exit() to make_task_dead() transition
+    - ia64: make IA64_MCA_RECOVERY bool instead of tristate
+    - exit: Put an upper limit on how often we can oops
+    - exit: Expose "oops_count" to sysfs
+    - exit: Allow oops_limit to be disabled
+    - panic: Consolidate open-coded panic_on_warn checks
+    - panic: Introduce warn_limit
+    - panic: Expose "warn_count" to sysfs
+    - exit: Use READ_ONCE() for all oops/warn limit reads
+    - mm: kvmalloc does not fallback to vmalloc for incompatible gfp flags
+    - ipv6: ensure sane device mtu in tunnels
+    - usb: host: xhci-plat: add wakeup entry at sysfs
+    - amd-xgbe: Delay AN timeout during KR training
+    - tcp: avoid the lookup process failing to get sk in ehash table
+    - net: fix UaF in netns ops registration error path
+    - netlink: annotate data races around nlk->portid
+    - ipv4: prevent potential spectre v1 gadget in ip_metrics_convert()
+
+  * rtcpie in timers from ubuntu_kernel_selftests randomly failing
+    (LP: #1814234)
+    - SAUCE: selftest: rtctest: Fix force-passing unreliable subtest
+
+ -- Luke Nowakowski-Krijger <luke.nowakowskikrijger@canonical.com>  Tue, 21 Mar 2023 10:27:58 -0700
+
+linux (4.15.0-208.219) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-208.219 -proposed tracker (LP: #2012097)
 
   * NFS deathlock with last Kernel 5.4.0-144.161 and 5.15.0-67.74 (LP: #2009325)
     - NFS: Correct timing for assigning access cache timestamp

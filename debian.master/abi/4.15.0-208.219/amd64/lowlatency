@@ -18111,6 +18111,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x097b9b86	key_set_timeout
 EXPORT_SYMBOL_GPL vmlinux 0x09992d99	mmc_send_status
 EXPORT_SYMBOL_GPL vmlinux 0x09a13bec	__blkg_prfill_rwstat
 EXPORT_SYMBOL_GPL vmlinux 0x09b47486	__raw_v4_lookup
+EXPORT_SYMBOL_GPL vmlinux 0x09b4f229	usb_control_msg_send
 EXPORT_SYMBOL_GPL vmlinux 0x09b53e14	interval_tree_remove
 EXPORT_SYMBOL_GPL vmlinux 0x09bd8512	ata_sff_thaw
 EXPORT_SYMBOL_GPL vmlinux 0x09cfb434	posix_clock_register
@@ -19603,6 +19604,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x5779d445	xenbus_exists
 EXPORT_SYMBOL_GPL vmlinux 0x578353e0	__vring_new_virtqueue
 EXPORT_SYMBOL_GPL vmlinux 0x5790e7a0	pci_unlock_rescan_remove
 EXPORT_SYMBOL_GPL vmlinux 0x579e0bf5	rtnl_unregister_all
+EXPORT_SYMBOL_GPL vmlinux 0x57a009e6	usb_control_msg_recv
 EXPORT_SYMBOL_GPL vmlinux 0x57bf2fe0	key_type_user
 EXPORT_SYMBOL_GPL vmlinux 0x57c39727	kdb_register_flags
 EXPORT_SYMBOL_GPL vmlinux 0x57d0d27e	tcp_slow_start
@@ -20201,6 +20203,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x775a6ef5	kvm_read_and_reset_pf_reason
 EXPORT_SYMBOL_GPL vmlinux 0x777d1f58	kstrdup_quotable_cmdline
 EXPORT_SYMBOL_GPL vmlinux 0x778b675a	pmc_atom_write
 EXPORT_SYMBOL_GPL vmlinux 0x77988403	ata_sff_check_status
+EXPORT_SYMBOL_GPL vmlinux 0x77a3cd85	usb_pipe_type_check
 EXPORT_SYMBOL_GPL vmlinux 0x77ae495d	usb_speed_string
 EXPORT_SYMBOL_GPL vmlinux 0x77fea1aa	ata_scsi_simulate
 EXPORT_SYMBOL_GPL vmlinux 0x780baa2f	usb_put_hcd

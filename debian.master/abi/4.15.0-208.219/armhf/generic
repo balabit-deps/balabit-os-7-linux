@@ -17457,6 +17457,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x29e8c0fc	pci_set_cacheline_size
 EXPORT_SYMBOL_GPL vmlinux 0x29eba37f	current_is_async
 EXPORT_SYMBOL_GPL vmlinux 0x29edc7a7	serial8250_do_set_mctrl
 EXPORT_SYMBOL_GPL vmlinux 0x29f0e513	blkg_conf_finish
+EXPORT_SYMBOL_GPL vmlinux 0x29f703e4	usb_pipe_type_check
 EXPORT_SYMBOL_GPL vmlinux 0x29fa419f	decode_rs8
 EXPORT_SYMBOL_GPL vmlinux 0x2a0afe64	devfreq_cooling_register
 EXPORT_SYMBOL_GPL vmlinux 0x2a0b1ce1	edac_mc_handle_error
@@ -18428,6 +18429,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x58d56d82	ata_pci_sff_init_host
 EXPORT_SYMBOL_GPL vmlinux 0x58de2ae3	__sbitmap_queue_get
 EXPORT_SYMBOL_GPL vmlinux 0x58fc0ee8	snd_soc_put_volsw_sx
 EXPORT_SYMBOL_GPL vmlinux 0x590d8378	pm_qos_update_request
+EXPORT_SYMBOL_GPL vmlinux 0x5926f8a6	usb_control_msg_recv
 EXPORT_SYMBOL_GPL vmlinux 0x5936f0d5	pci_dev_run_wake
 EXPORT_SYMBOL_GPL vmlinux 0x5937c1a7	usb_asmedia_modifyflowcontrol
 EXPORT_SYMBOL_GPL vmlinux 0x593fce1a	snd_soc_dpcm_fe_can_update
@@ -20429,6 +20431,7 @@ EXPORT_SYMBOL_GPL vmlinux 0xbe9527f5	regulator_is_enabled
 EXPORT_SYMBOL_GPL vmlinux 0xbe96dfd8	of_reconfig_notifier_unregister
 EXPORT_SYMBOL_GPL vmlinux 0xbe9e47de	security_kernel_post_read_file
 EXPORT_SYMBOL_GPL vmlinux 0xbea5ff1e	static_key_initialized
+EXPORT_SYMBOL_GPL vmlinux 0xbeced86b	usb_control_msg_send
 EXPORT_SYMBOL_GPL vmlinux 0xbee7bf45	gpiochip_irqchip_add_key
 EXPORT_SYMBOL_GPL vmlinux 0xbef8ba25	dpcm_be_dai_trigger
 EXPORT_SYMBOL_GPL vmlinux 0xbf041102	register_vt_notifier

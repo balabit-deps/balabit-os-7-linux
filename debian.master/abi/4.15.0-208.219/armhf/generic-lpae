@@ -16491,6 +16491,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x00ebcb5d	ata_id_string
 EXPORT_SYMBOL_GPL vmlinux 0x00f0bac5	input_ff_create
 EXPORT_SYMBOL_GPL vmlinux 0x00f61604	ata_sff_queue_pio_task
 EXPORT_SYMBOL_GPL vmlinux 0x010cc050	virtqueue_get_avail_addr
+EXPORT_SYMBOL_GPL vmlinux 0x010cf844	usb_control_msg_send
 EXPORT_SYMBOL_GPL vmlinux 0x0110df93	tpm_get_timeouts
 EXPORT_SYMBOL_GPL vmlinux 0x011cf028	regulator_suspend_finish
 EXPORT_SYMBOL_GPL vmlinux 0x011f6fee	blk_mq_unquiesce_queue
@@ -16871,6 +16872,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x12b43333	virtio_add_status
 EXPORT_SYMBOL_GPL vmlinux 0x12bf2b73	devm_led_classdev_unregister
 EXPORT_SYMBOL_GPL vmlinux 0x12d3befa	snd_soc_get_strobe
 EXPORT_SYMBOL_GPL vmlinux 0x12e86f7f	__irq_domain_alloc_fwnode
+EXPORT_SYMBOL_GPL vmlinux 0x12f48a2a	usb_pipe_type_check
 EXPORT_SYMBOL_GPL vmlinux 0x1308dd9a	public_key_subtype
 EXPORT_SYMBOL_GPL vmlinux 0x131a5ed7	regmap_del_irq_chip
 EXPORT_SYMBOL_GPL vmlinux 0x131db64a	system_long_wq
@@ -17326,6 +17328,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x27f52f11	__pm_runtime_suspend
 EXPORT_SYMBOL_GPL vmlinux 0x27fa66e1	nr_free_buffer_pages
 EXPORT_SYMBOL_GPL vmlinux 0x282cdabc	usb_led_activity
 EXPORT_SYMBOL_GPL vmlinux 0x28454fec	__devm_regmap_init_i2c
+EXPORT_SYMBOL_GPL vmlinux 0x28489d70	usb_control_msg_recv
 EXPORT_SYMBOL_GPL vmlinux 0x2853a697	inet6_destroy_sock
 EXPORT_SYMBOL_GPL vmlinux 0x285b3c81	snd_soc_add_dai_controls
 EXPORT_SYMBOL_GPL vmlinux 0x2864abc9	klist_node_attached

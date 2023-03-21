@@ -17737,6 +17737,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x2315a82c	clk_mux_ro_ops
 EXPORT_SYMBOL_GPL vmlinux 0x231e3d7b	wm8997_patch
 EXPORT_SYMBOL_GPL vmlinux 0x234c4384	devres_alloc_node
 EXPORT_SYMBOL_GPL vmlinux 0x2355be43	irq_gc_mask_set_bit
+EXPORT_SYMBOL_GPL vmlinux 0x235a7941	usb_control_msg_recv
 EXPORT_SYMBOL_GPL vmlinux 0x235e079c	power_supply_get_by_name
 EXPORT_SYMBOL_GPL vmlinux 0x2366a2c0	errata
 EXPORT_SYMBOL_GPL vmlinux 0x237461a4	ata_acpi_gtm
@@ -19574,6 +19575,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x7dcc441e	of_hwspin_lock_get_id
 EXPORT_SYMBOL_GPL vmlinux 0x7dd29263	raw_v4_hashinfo
 EXPORT_SYMBOL_GPL vmlinux 0x7dd76790	amba_ahb_device_add_res
 EXPORT_SYMBOL_GPL vmlinux 0x7dda30af	unregister_tracepoint_module_notifier
+EXPORT_SYMBOL_GPL vmlinux 0x7ddd1e7b	usb_pipe_type_check
 EXPORT_SYMBOL_GPL vmlinux 0x7de65a03	acpi_lpat_free_conversion_table
 EXPORT_SYMBOL_GPL vmlinux 0x7e05de2b	devfreq_event_set_event
 EXPORT_SYMBOL_GPL vmlinux 0x7e061fec	debugfs_create_u8
@@ -21824,6 +21826,7 @@ EXPORT_SYMBOL_GPL vmlinux 0xf3ebf4eb	arch_apei_report_mem_error
 EXPORT_SYMBOL_GPL vmlinux 0xf3f18238	ktime_get_resolution_ns
 EXPORT_SYMBOL_GPL vmlinux 0xf404c027	tty_port_register_device
 EXPORT_SYMBOL_GPL vmlinux 0xf40517cc	wm8350_read_auxadc
+EXPORT_SYMBOL_GPL vmlinux 0xf40f0664	usb_control_msg_send
 EXPORT_SYMBOL_GPL vmlinux 0xf4181ba2	spi_statistics_add_transfer_stats
 EXPORT_SYMBOL_GPL vmlinux 0xf46ba379	of_gen_pool_get
 EXPORT_SYMBOL_GPL vmlinux 0xf46c091c	usb_unpoison_anchored_urbs

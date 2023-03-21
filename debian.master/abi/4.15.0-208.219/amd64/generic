@@ -18611,6 +18611,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x23d95205	edac_set_report_status
 EXPORT_SYMBOL_GPL vmlinux 0x23eb1c65	shake_page
 EXPORT_SYMBOL_GPL vmlinux 0x23f2ad72	platform_driver_unregister
 EXPORT_SYMBOL_GPL vmlinux 0x23f62726	timecounter_cyc2time
+EXPORT_SYMBOL_GPL vmlinux 0x23f78212	usb_control_msg_recv
 EXPORT_SYMBOL_GPL vmlinux 0x244293d9	ata_eh_qc_complete
 EXPORT_SYMBOL_GPL vmlinux 0x24457174	audit_enabled
 EXPORT_SYMBOL_GPL vmlinux 0x24481393	phy_reset
@@ -19304,6 +19305,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x46b0525b	map_vm_area
 EXPORT_SYMBOL_GPL vmlinux 0x46ba9ad6	pci_msi_prepare
 EXPORT_SYMBOL_GPL vmlinux 0x46bea814	devm_regmap_field_free
 EXPORT_SYMBOL_GPL vmlinux 0x46c0093b	acpi_register_gsi
+EXPORT_SYMBOL_GPL vmlinux 0x46c8b076	usb_control_msg_send
 EXPORT_SYMBOL_GPL vmlinux 0x46c9563b	dma_buf_attach
 EXPORT_SYMBOL_GPL vmlinux 0x46cecebf	bus_for_each_dev
 EXPORT_SYMBOL_GPL vmlinux 0x46d0d020	acpi_processor_get_performance_info
@@ -20671,6 +20673,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x8f2c197c	tcp_cong_avoid_ai
 EXPORT_SYMBOL_GPL vmlinux 0x8f61366d	devm_led_classdev_unregister
 EXPORT_SYMBOL_GPL vmlinux 0x8f6cee77	__round_jiffies_relative
 EXPORT_SYMBOL_GPL vmlinux 0x8f8c083d	ehci_setup
+EXPORT_SYMBOL_GPL vmlinux 0x8f92cbca	usb_pipe_type_check
 EXPORT_SYMBOL_GPL vmlinux 0x8f97d904	wm8350_read_auxadc
 EXPORT_SYMBOL_GPL vmlinux 0x8f9c0385	net_ns_type_operations
 EXPORT_SYMBOL_GPL vmlinux 0x8faceb71	scsi_internal_device_block_nowait

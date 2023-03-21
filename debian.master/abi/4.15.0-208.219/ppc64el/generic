@@ -17023,6 +17023,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x1450864b	crypto_alloc_instance
 EXPORT_SYMBOL_GPL vmlinux 0x147ea16e	mm_iommu_ua_to_hpa_rm
 EXPORT_SYMBOL_GPL vmlinux 0x1483947d	ata_link_abort
 EXPORT_SYMBOL_GPL vmlinux 0x1487f0c2	inet_csk_route_child_sock
+EXPORT_SYMBOL_GPL vmlinux 0x1487f668	usb_pipe_type_check
 EXPORT_SYMBOL_GPL vmlinux 0x148e73e3	lwtunnel_valid_encap_type
 EXPORT_SYMBOL_GPL vmlinux 0x149f1202	inet_csk_compat_getsockopt
 EXPORT_SYMBOL_GPL vmlinux 0x14a4b4de	ipv4_redirect
@@ -19630,6 +19631,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x9fae1628	devm_get_free_pages
 EXPORT_SYMBOL_GPL vmlinux 0x9fbdb0a5	__irq_set_handler
 EXPORT_SYMBOL_GPL vmlinux 0x9fcc32d0	uart_set_options
 EXPORT_SYMBOL_GPL vmlinux 0x9fce80db	fb_notifier_call_chain
+EXPORT_SYMBOL_GPL vmlinux 0x9fd668dd	usb_control_msg_send
 EXPORT_SYMBOL_GPL vmlinux 0x9fdd404e	__ablkcipher_walk_complete
 EXPORT_SYMBOL_GPL vmlinux 0x9fe939e1	mpi_powm
 EXPORT_SYMBOL_GPL vmlinux 0x9ff6b232	powercap_unregister_zone
@@ -21154,6 +21156,7 @@ EXPORT_SYMBOL_GPL vmlinux 0xf4940681	regmap_parse_val
 EXPORT_SYMBOL_GPL vmlinux 0xf494f618	mmc_regulator_get_ocrmask
 EXPORT_SYMBOL_GPL vmlinux 0xf499fdb2	rcu_barrier_bh
 EXPORT_SYMBOL_GPL vmlinux 0xf4a1768b	ata_sff_irq_on
+EXPORT_SYMBOL_GPL vmlinux 0xf4abe1f0	usb_control_msg_recv
 EXPORT_SYMBOL_GPL vmlinux 0xf4af35c2	rcu_gp_is_normal
 EXPORT_SYMBOL_GPL vmlinux 0xf4f3f6ff	cxl_cx4_teardown_msi_irqs
 EXPORT_SYMBOL_GPL vmlinux 0xf4fc2d6c	__ring_buffer_alloc
