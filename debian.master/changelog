@@ -1,3 +1,13 @@
+linux (4.15.0-210.221) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-210.221 -proposed tracker (LP: #2016738)
+
+  * CVE-2023-1829
+    - net/sched: Retire tcindex classifier
+    - [Config]: Make sure CONFIG_NET_CLS_TCINDEX is not available
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Mon, 17 Apr 2023 17:55:50 -0300
+
 linux (4.15.0-209.220) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-209.220 -proposed tracker (LP: #2011989)
