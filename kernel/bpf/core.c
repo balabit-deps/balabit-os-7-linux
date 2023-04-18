@@ -31,6 +31,7 @@
 #include <linux/rbtree_latch.h>
 #include <linux/kallsyms.h>
 #include <linux/rcupdate.h>
+#include <linux/nospec.h>
 
 #include <asm/unaligned.h>
 

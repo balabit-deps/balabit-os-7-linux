@@ -1,3 +1,94 @@
+linux (4.15.0-211.222) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-211.222 -proposed tracker (LP: #2016623)
+
+  * Debian autoreconstruct Fix restoration of execute permissions (LP: #2015498)
+    - [Debian] autoreconstruct - fix restoration of execute permissions
+
+  * kernel: fix __clear_user() inline assembly constraints (LP: #2013088)
+    - s390/uaccess: add missing earlyclobber annotations to __clear_user()
+
+  * Fix selftests/ftracetests/Meta-selftests (LP: #2006453)
+    - selftests/ftrace: Fix bash specific "==" operator
+
+  * Bionic update: upstream stable patchset 2023-04-05 (LP: #2015399)
+    - firewire: fix memory leak for payload of request subaction to IEC 61883-1
+      FCP region
+    - bus: sunxi-rsb: Fix error handling in sunxi_rsb_init()
+    - ALSA: hda/via: Avoid potential array out-of-bound in add_secret_dac_path()
+    - netrom: Fix use-after-free caused by accept on already connected socket
+    - squashfs: harden sanity check in squashfs_read_xattr_id_table
+    - sctp: do not check hb_timer.expires when resetting hb_timer
+    - net: openvswitch: fix flow memory leak in ovs_flow_cmd_new
+    - scsi: target: core: Fix warning on RT kernels
+    - scsi: iscsi_tcp: Fix UAF during login when accessing the shost ipaddress
+    - net/x25: Fix to not accept on connected socket
+    - usb: gadget: f_fs: Fix unbalanced spinlock in __ffs_ep0_queue_wait
+    - fbcon: Check font dimension limits
+    - watchdog: diag288_wdt: do not use stack buffers for hardware data
+    - watchdog: diag288_wdt: fix __diag288() inline assembly
+    - efi: Accept version 2 of memory attributes table
+    - iio: hid: fix the retval in accel_3d_capture_sample
+    - iio: adc: berlin2-adc: Add missing of_node_put() in error path
+    - iio:adc:twl6030: Enable measurements of VUSB, VBAT and others
+    - parisc: Fix return code of pdc_iodc_print()
+    - parisc: Wire up PTRACE_GETREGS/PTRACE_SETREGS for compat case
+    - mm: hugetlb: proc: check for hugetlb shared PMD in /proc/PID/smaps
+    - mm/swapfile: add cond_resched() in get_swap_pages()
+    - Squashfs: fix handling and sanity checking of xattr_ids count
+    - serial: 8250_dma: Fix DMA Rx completion race
+    - serial: 8250_dma: Fix DMA Rx rearm race
+    - btrfs: limit device extents to the device size
+    - ALSA: emux: Avoid potential array out-of-bound in snd_emux_xg_control()
+    - ALSA: pci: lx6464es: fix a debug loop
+    - pinctrl: aspeed: Fix confusing types in return value
+    - pinctrl: single: fix potential NULL dereference
+    - net: USB: Fix wrong-direction WARNING in plusb.c
+    - usb: core: add quirk for Alcor Link AK9563 smartcard reader
+    - migrate: hugetlb: check for hugetlb shared PMD in node migration
+    - tools/virtio: fix the vringh test for virtio ring changes
+    - net/rose: Fix to not accept on connected socket
+    - nvme-fc: fix a missing queue put in nvmet_fc_ls_create_association
+    - aio: fix mremap after fork null-deref
+    - mmc: sdio: fix possible resource leaks in some error paths
+    - ALSA: hda/conexant: add a new hda codec SN6180
+    - hugetlb: check for undefined shift on 32 bit architectures
+    - revert "squashfs: harden sanity check in squashfs_read_xattr_id_table"
+    - i40e: add double of VLAN header when computing the max MTU
+    - net: bgmac: fix BCM5358 support by setting correct flags
+    - dccp/tcp: Avoid negative sk_forward_alloc by ipv6_pinfo.pktoptions.
+    - net/usb: kalmia: Don't pass act_len in usb_bulk_msg error path
+    - net: stmmac: Restrict warning on disabling DMA store and fwd mode
+    - ipv6: Fix datagram socket connection with DSCP.
+    - ipv6: Fix tcp socket connection with DSCP.
+    - i40e: Add checking for null for nlmsg_find_attr()
+    - kvm: initialize all of the kvm_debugregs structure before sending it to
+      userspace
+    - nilfs2: fix underflow in second superblock position calculations
+    - ata: libata: Fix sata_down_spd_limit() when no link speed is reported
+    - vc_screen: move load of struct vc_data pointer in vcs_read() to avoid UAF
+    - thermal: intel: int340x: Protect trip temperature from concurrent updates
+    - iio:adc:twl6030: Enable measurement of VAC
+    - IB/hfi1: Restore allocated resources on failed copyout
+    - net: phy: meson-gxl: use MMD access dummy stubs for GXL, internal PHY
+    - riscv: Fixup race condition on PG_dcache_clean in flush_icache_pte
+    - arm64: dts: meson-gx: Make mmc host controller interrupts level-sensitive
+    - wifi: rtl8xxxu: gen2: Turn on the rate control
+    - powerpc: dts: t208x: Mark MAC1 and MAC2 as 10G
+    - random: always mix cycle counter in add_latent_entropy()
+    - powerpc: dts: t208x: Disable 10G on MAC1 and MAC2
+    - alarmtimer: Prevent starvation by small intervals and SIG_IGN
+    - uaccess: Add speculation barrier to copy_from_user()
+    - wifi: mwifiex: Add missing compatible string for SD8787
+    - bpf: add missing header file include
+    - vc_screen: don't clobber return value in vcs_read
+    - dmaengine: sh: rcar-dmac: Check for error num after dma_set_max_seg_size
+
+  * CVE-2023-1118
+    - media: rc: Fix use-after-free bugs caused by ene_tx_irqsim()
+
+ -- Luke Nowakowski-Krijger <luke.nowakowskikrijger@canonical.com>  Tue, 18 Apr 2023 11:29:54 -0700
+
 linux (4.15.0-210.221) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-210.221 -proposed tracker (LP: #2016738)

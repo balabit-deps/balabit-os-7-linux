@@ -161,6 +161,8 @@ static struct phy_driver meson_gxl_phy[] = {
 		.read_status	= meson_gxl_read_status,
 		.suspend        = genphy_suspend,
 		.resume         = genphy_resume,
+		.read_mmd	= genphy_read_mmd_unsupported,
+		.write_mmd	= genphy_write_mmd_unsupported,
 	},
 };
 
