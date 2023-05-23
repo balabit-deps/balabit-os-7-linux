@@ -1,3 +1,31 @@
+linux (4.15.0-212.223) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-212.223 -proposed tracker (LP: #2019708)
+
+  * Packaging resync (LP: #1786013)
+    - [Packaging] update helper scripts
+
+  * CVE-2023-32233
+    - netfilter: nf_tables: add nft_set_is_anonymous() helper
+    - netfilter: nf_tables: split set destruction in deactivate and destroy phase
+    - netfilter: nf_tables: unbind set in rule from commit path
+    - netfilter: nf_tables: bogus EBUSY in helper removal from transaction
+    - netfilter: nf_tables: fix set double-free in abort path
+    - netfilter: nf_tables: bogus EBUSY when deleting set after flush
+    - netfilter: nf_tables: use-after-free in failing rule with bound set
+    - netfilter: nf_tables: deactivate anonymous set from preparation phase
+
+  * CVE-2023-31436
+    - net: sched: sch_qfq: prevent slab-out-of-bounds in qfq_activate_agg
+
+  * CVE-2023-1380
+    - wifi: brcmfmac: slab-out-of-bounds read in brcmf_get_assoc_ies()
+
+  * CVE-2023-30456
+    - KVM: nVMX: add missing consistency checks for CR0 and CR4
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Tue, 23 May 2023 09:17:00 -0300
+
 linux (4.15.0-211.222) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-211.222 -proposed tracker (LP: #2016623)
