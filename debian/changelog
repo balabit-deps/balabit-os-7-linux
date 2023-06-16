@@ -1,3 +1,12 @@
+linux (4.15.0-213.224) bionic; urgency=medium
+
+  * bionic/linux: 4.15.0-213.224 -proposed tracker (LP: #2024234)
+
+  * Kernel warning after upgrade to 4.15.0.211.194 (LP: #2020279)
+    - net: Remove WARN_ON_ONCE(sk->sk_forward_alloc) from sk_stream_kill_queues().
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Fri, 16 Jun 2023 14:32:39 -0300
+
 linux (4.15.0-212.223) bionic; urgency=medium
 
   * bionic/linux: 4.15.0-212.223 -proposed tracker (LP: #2019708)
